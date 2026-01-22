@@ -14,6 +14,7 @@
 - [Functional Requirements](#functional-requirements)
   - [Upstream Management](#upstream-management)
   - [Route Management](#route-management)
+  - [Enable/Disable Semantics](#enabledisable-semantics)
   - [Request Proxying](#request-proxying)
   - [Authentication Injection](#authentication-injection)
   - [Rate Limiting](#rate-limiting)
@@ -99,6 +100,23 @@ CRUD for upstream configurations. Each upstream defines: server endpoints, proto
 ### Route Management
 
 CRUD for routes. Routes define matching rules (method, path, query allowlist) mapping requests to upstreams.
+
+### Enable/Disable Semantics
+
+Upstreams and routes support an `enabled` boolean field (default: `true`).
+
+**Behavior**:
+- **Disabled upstream**: All proxy requests to this upstream rejected with gateway error
+- **Disabled route**: Route excluded from matching; request falls through to next match or returns 404
+
+**Hierarchical Inheritance**:
+- If ancestor tenant disables an upstream, it is disabled for all descendants
+- Descendant cannot re-enable an ancestor-disabled resource
+
+**Use Cases**:
+- Temporary maintenance without deleting configuration
+- Emergency circuit break at management layer
+- Gradual rollout (enable route for subset of tenants)
 
 ### Request Proxying
 

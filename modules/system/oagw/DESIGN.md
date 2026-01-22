@@ -310,8 +310,6 @@ Well-known headers e.g., `Content-Length`, `Content-Type` must be validated, set
 
 #### Guard Rules
 
-#### Guard Rules
-
 Validation rules that can reject request:
 
 | Inbound      | Rule                                                             |

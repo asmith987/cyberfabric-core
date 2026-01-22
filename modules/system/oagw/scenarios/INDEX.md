@@ -126,6 +126,24 @@ Legend (used in checks):
   - Over N requests, endpoints are selected round-robin (or documented strategy).
   - Endpoint selection is stable across keep-alive connections (or explicitly not).
 
+### [x] 2.11 Justification: Re-enable upstream restores proxy traffic
+- Scenario: [`positive-2.11-re-enable-upstream-restores-proxy-traffic.md`](management-api/upstreams/positive-2.11-re-enable-upstream-restores-proxy-traffic.md)
+- Why it matters:
+  - Maintenance windows should be reversible.
+- What to check:
+  - Upstream with `enabled=false` blocks traffic.
+  - `PUT /upstreams/{id}` with `enabled=true` restores traffic.
+  - Subsequent proxy requests succeed.
+
+### [x] 2.12 Justification: List upstreams includes disabled resources
+- Scenario: [`positive-2.12-list-upstreams-includes-disabled-resources.md`](management-api/upstreams/positive-2.12-list-upstreams-includes-disabled-resources.md)
+- Why it matters:
+  - Operators need visibility into all config, not just active.
+- What to check:
+  - `GET /upstreams` returns both enabled and disabled upstreams.
+  - Response includes `enabled` field for each resource.
+  - Optional: `$filter=enabled eq true` can filter to active only.
+
 ---
 
 ## 3) Management API: route lifecycle + matching fields
@@ -189,6 +207,23 @@ Legend (used in checks):
 - What to check:
   - `match.grpc.service` + `match.grpc.method` routes to HTTP/2 `:path` `/Service/Method`.
   - Wrong service/method yields `404 ROUTE_NOT_FOUND` (gateway).
+
+### [x] 3.9 Justification: Re-enable route restores proxy traffic
+- Scenario: [`positive-3.9-re-enable-route-restores-proxy-traffic.md`](management-api/routes/positive-3.9-re-enable-route-restores-proxy-traffic.md)
+- Why it matters:
+  - Route-level maintenance should be reversible.
+- What to check:
+  - Route with `enabled=false` is skipped in matching.
+  - `PUT /routes/{id}` with `enabled=true` restores matching.
+  - Subsequent proxy requests succeed.
+
+### [x] 3.10 Justification: List routes includes disabled resources
+- Scenario: [`positive-3.10-list-routes-includes-disabled-resources.md`](management-api/routes/positive-3.10-list-routes-includes-disabled-resources.md)
+- Why it matters:
+  - Operators need visibility into all route config.
+- What to check:
+  - `GET /routes` returns both enabled and disabled routes.
+  - Response includes `enabled` field for each resource.
 
 ## 4) Management API: plugin lifecycle
 
