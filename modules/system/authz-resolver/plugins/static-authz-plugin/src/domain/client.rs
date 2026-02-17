@@ -46,7 +46,7 @@ mod tests {
             },
             context: EvaluationRequestContext {
                 tenant_context: Some(TenantContext {
-                    root_id: Some(Uuid::nil()),
+                    root_id: Some(Uuid::parse_str("33333333-3333-3333-3333-333333333333").unwrap()),
                     ..TenantContext::default()
                 }),
                 token_scopes: vec![],

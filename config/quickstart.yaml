@@ -139,7 +139,6 @@ modules:
     config:
       vendor: "hyperspot"
       priority: 100
-      mode: allow_all
 
   simple-user-settings:
     # Module-specific database configuration

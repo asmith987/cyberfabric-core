@@ -105,7 +105,7 @@ Unknown properties cause the containing constraint to fail. If all constraints f
 Plugins implement [`AuthZResolverPluginClient`](authz-resolver-sdk/src/plugin_api.rs) and register via GTS.
 
 CyberFabric includes one plugin out of the box:
-- [`static_authz_plugin`](plugins/static-authz-plugin/) — Allow-all plugin for development and testing
+- [`static_authz_plugin`](plugins/static-authz-plugin/) — Tenant-scoped plugin for development and testing (denies access when no valid tenant is resolved)
 
 ## Configuration
 
@@ -128,11 +128,7 @@ modules:
   static_authz_plugin:
     vendor: "hyperspot"
     priority: 100
-    mode: allow_all
 ```
-
-**Modes:**
-- **`allow_all`** — Always returns `decision=true` with tenant-scoped constraints derived from the request's `TenantContext`
 
 ## Usage
 
@@ -158,7 +154,7 @@ let response = authz.evaluate(EvaluationRequest {
 - `PolicyEnforcer` with `access_scope` for one-step PEP flow
 - PEP compiler with fail-closed constraint compilation
 - Plugin discovery via types-registry
-- Static allow-all plugin with tenant scoping
+- Static dev plugin with tenant scoping (denies on nil/missing tenant)
 - ClientHub registration for in-process consumption
 
 ### Phase 2: Production PDP Plugin (Planned)

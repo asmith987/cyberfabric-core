@@ -11,9 +11,6 @@ pub struct StaticAuthZPluginConfig {
 
     /// Plugin priority (lower = higher priority).
     pub priority: i16,
-
-    /// Authorization mode.
-    pub mode: AuthZMode,
 }
 
 impl Default for StaticAuthZPluginConfig {
@@ -21,16 +18,6 @@ impl Default for StaticAuthZPluginConfig {
         Self {
             vendor: "hyperspot".to_owned(),
             priority: 100,
-            mode: AuthZMode::AllowAll,
         }
     }
-}
-
-/// Authorization mode.
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum AuthZMode {
-    /// Allow all requests. For constrained operations, scope to context tenant.
-    #[default]
-    AllowAll,
 }

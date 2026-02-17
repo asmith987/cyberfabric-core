@@ -40,7 +40,6 @@ impl Module for StaticAuthZPlugin {
         info!(
             vendor = %cfg.vendor,
             priority = cfg.priority,
-            mode = ?cfg.mode,
             "Loaded plugin configuration"
         );
 

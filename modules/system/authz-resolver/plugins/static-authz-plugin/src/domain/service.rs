@@ -10,10 +10,9 @@ use uuid::Uuid;
 
 /// Static `AuthZ` resolver service.
 ///
-/// In `allow_all` mode:
-/// - Always returns `decision: true`
-/// - Returns `in` predicate on `pep_properties::OWNER_TENANT_ID` scoped to the context tenant
-///   from the request (for all operations including CREATE).
+/// - Returns `decision: true` with an `in` predicate on `pep_properties::OWNER_TENANT_ID`
+///   scoped to the context tenant from the request (for all operations including CREATE).
+/// - Denies access (`decision: false`) when no valid tenant can be resolved.
 #[domain_model]
 #[derive(Default)]
 pub struct Service;
@@ -44,26 +43,31 @@ impl Service {
                     .and_then(|s| Uuid::parse_str(s).ok())
             });
 
-        let constraints = if let Some(tid) = tenant_id {
-            if tid == Uuid::default() {
-                // Anonymous/nil tenant: no constraints (will result in allow_all)
-                vec![]
-            } else {
-                vec![Constraint {
-                    predicates: vec![Predicate::In(InPredicate::new(
-                        pep_properties::OWNER_TENANT_ID,
-                        [tid],
-                    ))],
-                }]
-            }
-        } else {
-            vec![]
+        let Some(tid) = tenant_id else {
+            // No tenant resolvable from context or subject — deny access.
+            return EvaluationResponse {
+                decision: false,
+                context: EvaluationResponseContext::default(),
+            };
         };
+
+        if tid == Uuid::default() {
+            // Nil UUID tenant — deny rather than grant unrestricted access.
+            return EvaluationResponse {
+                decision: false,
+                context: EvaluationResponseContext::default(),
+            };
+        }
 
         EvaluationResponse {
             decision: true,
             context: EvaluationResponseContext {
-                constraints,
+                constraints: vec![Constraint {
+                    predicates: vec![Predicate::In(InPredicate::new(
+                        pep_properties::OWNER_TENANT_ID,
+                        [tid],
+                    ))],
+                }],
                 ..Default::default()
             },
         }
@@ -159,11 +163,44 @@ mod tests {
     }
 
     #[test]
-    fn list_operation_with_nil_tenant_returns_no_constraints() {
+    fn nil_tenant_is_denied() {
         let service = Service::new();
         let response = service.evaluate(&make_request(true, Some(Uuid::default())));
 
-        assert!(response.decision);
+        assert!(!response.decision);
+        assert!(response.context.constraints.is_empty());
+    }
+
+    #[test]
+    fn missing_tenant_context_and_subject_property_is_denied() {
+        let request = EvaluationRequest {
+            subject: Subject {
+                id: Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap(),
+                subject_type: None,
+                properties: HashMap::new(), // no tenant_id property
+            },
+            action: Action {
+                name: "list".to_owned(),
+            },
+            resource: Resource {
+                resource_type: "gts.x.core.users.user.v1~".to_owned(),
+                id: None,
+                properties: HashMap::new(),
+            },
+            context: EvaluationRequestContext {
+                tenant_context: None,
+                token_scopes: vec!["*".to_owned()],
+                require_constraints: true,
+                capabilities: vec![],
+                supported_properties: vec![],
+                bearer_token: None,
+            },
+        };
+
+        let service = Service::new();
+        let response = service.evaluate(&request);
+
+        assert!(!response.decision);
         assert!(response.context.constraints.is_empty());
     }
 }

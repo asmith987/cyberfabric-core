@@ -1,12 +1,9 @@
 //! Static `AuthZ` Resolver Plugin
 //!
-//! This plugin provides a static allow-all authorization policy for development and testing.
+//! This plugin provides a static authorization policy for development and testing.
 //!
-//! ## Mode: `allow_all` (default)
-//!
-//! - `require_constraints=false` (CREATE) → `decision: true`, no constraints
-//! - `require_constraints=true` (LIST/GET/UPDATE/DELETE) → `decision: true` with
-//!   `in` predicate on `owner_tenant_id` using the context tenant ID.
+//! - Valid tenant → `decision: true` with `in` predicate on `owner_tenant_id`
+//! - Nil or missing tenant → `decision: false`
 //!
 //! ## Configuration
 //!
@@ -16,7 +13,6 @@
 //!     config:
 //!       vendor: "hyperspot"
 //!       priority: 100
-//!       mode: allow_all
 //! ```
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 

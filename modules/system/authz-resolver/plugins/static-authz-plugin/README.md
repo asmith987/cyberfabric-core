@@ -2,7 +2,7 @@
 
 > **Temporary plugin** — this is a development/testing stub that will be replaced by a production-ready AuthZ plugin in a future release.
 
-Static allow-all authorization policy for the AuthZ Resolver gateway.
+Static authorization policy for the AuthZ Resolver gateway.
 
 ## Purpose
 
@@ -16,14 +16,15 @@ Provides a permissive authorization policy so that the platform can run end-to-e
 
 ## Behavior
 
-In `allow_all` mode (the only mode currently supported):
-
 | Scenario | Decision | Constraints |
 |----------|----------|-------------|
-| `require_constraints = false` | `true` | none |
-| `require_constraints = true` | `true` | `in` predicate on `owner_tenant_id` scoped to the caller's tenant |
+| Valid tenant resolved | `true` | `in` predicate on `owner_tenant_id` scoped to the caller's tenant |
+| Nil (`00000000-…-000`) tenant | `false` | none |
+| No tenant resolvable | `false` | none |
 
-This ensures that the Secure ORM receives the tenant scope it needs for queries, while still granting access to every action.
+Tenant is resolved from `TenantContext.root_id` first, then falls back to `subject.properties["tenant_id"]`.
+
+This ensures that the Secure ORM receives the tenant scope it needs for queries, while denying access when no valid tenant can be determined.
 
 ## Configuration
 
@@ -33,7 +34,6 @@ modules:
     config:
       vendor: "hyperspot"
       priority: 100
-      mode: allow_all
 ```
 
 ## Feature Flag
