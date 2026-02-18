@@ -53,6 +53,15 @@ See [PRD.md](./PRD.md) section 1 "Overview" — Key Problems Solved:
 |--------|----------------------------|
 | `cpt-cf-llm-gateway-nfr-scalability-v1` | Stateless design, distributed cache for async jobs |
 
+#### Key ADRs
+
+| ADR ID | Decision Summary |
+|--------|------------------|
+| `cpt-cf-llm-gateway-adr-stateless` | Stateless gateway design for horizontal scalability |
+| `cpt-cf-llm-gateway-adr-pass-through` | Pass-through content processing, no tool execution |
+| `cpt-cf-llm-gateway-adr-file-storage` | FileStorage for all media handling |
+| `cpt-cf-llm-gateway-adr-circuit-breaking` | Circuit breaking at OAGW + health-based routing at Gateway |
+
 ### 1.3 Architecture Layers
 
 | Layer | Responsibility | Technology |
@@ -64,7 +73,7 @@ See [PRD.md](./PRD.md) section 1 "Overview" — Key Problems Solved:
 
 ## 2. Principles & Constraints
 
-### 2.1: Design Principles
+### 2.1 Design Principles
 
 #### Stateless
 
@@ -82,7 +91,7 @@ Gateway does not store conversation history. Consumer provides full context with
 
 Gateway normalizes but does not interpret content. Tool execution and response parsing are consumer responsibility.
 
-### 2.2: Constraints
+### 2.2 Constraints
 
 #### Provider Rate Limits
 
@@ -116,7 +125,7 @@ Full request/response content is not logged due to PII concerns. Only metadata (
 
 ## 3. Technical Architecture
 
-### 3.1: Domain Model
+### 3.1 Domain Model
 
 **Technology**: GTS (JSON Schema)
 
@@ -191,7 +200,7 @@ Full request/response content is not logged due to PII concerns. Only metadata (
 - BatchRequest → Response: optional result
 - BatchRequest → Error: optional
 
-### 3.2: Component Model
+### 3.2 Component Model
 
 ```mermaid
 graph TB
@@ -244,7 +253,7 @@ graph TB
 | FileStorage | Media storage and retrieval |
 | Type Registry | Tool schema resolution |
 
-### 3.3: API Contracts
+### 3.3 API Contracts
 
 **Technology**: REST/OpenAPI
 
@@ -301,7 +310,7 @@ Chunk structure:
 
 The stream terminates with `data: [DONE]` event.
 
-### 3.4: Interactions & Sequences
+### 3.4 Interactions & Sequences
 
 > **Note**: In the sequence diagrams below, "LLM Gateway" (GW) represents the full gateway stack including Provider Adapters. In practice, the Application Layer delegates to provider-specific adapters, which then call Outbound API Gateway. This is simplified for diagram readability. See Component Model (section 3.2) for the detailed layer structure.
 
@@ -879,7 +888,7 @@ sequenceDiagram
 
 This is the same pattern used for async jobs (see ADR-0001).
 
-### 3.5: Database schemas & tables
+### 3.5 Database schemas & tables
 
 <!-- Not applicable - Gateway is stateless except for temporary async job state -->
 
@@ -896,5 +905,3 @@ This is the same pattern used for async jobs (see ADR-0001).
 <!-- To be added as needed -->
 
 ## 5. Traceability
- 
-**ADRs**: `cpt-cf-llm-gateway-adr-file-storage`, `cpt-cf-llm-gateway-adr-circuit-breaking`

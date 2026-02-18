@@ -384,7 +384,7 @@ Secret values **MUST NOT** appear in logs, error messages, or debug output at an
 
 #### UC-001: Partner Creates Shared Secret
 
-- [ ] `p1` - **ID**: `cpt-cf-credstore-uc-create-shared`
+- [ ] `p1` - **ID**: `cpt-cf-credstore-usecase-create-shared`
 
 <!-- cpt-cf-id-content -->
 **Actor**: `cpt-cf-credstore-actor-tenant-admin`
@@ -407,7 +407,7 @@ Secret values **MUST NOT** appear in logs, error messages, or debug output at an
 
 #### UC-002: OAGW Retrieves Secret for Customer (Hierarchical Resolution)
 
-- [ ] `p1` - **ID**: `cpt-cf-credstore-uc-hierarchical-resolve`
+- [ ] `p1` - **ID**: `cpt-cf-credstore-usecase-hierarchical-resolve`
 
 <!-- cpt-cf-id-content -->
 **Actor**: `cpt-cf-credstore-actor-oagw`
@@ -439,7 +439,7 @@ Secret values **MUST NOT** appear in logs, error messages, or debug output at an
 
 #### UC-003: Customer Overrides Parent Secret (Shadowing)
 
-- [ ] `p1` - **ID**: `cpt-cf-credstore-uc-shadowing`
+- [ ] `p1` - **ID**: `cpt-cf-credstore-usecase-shadowing`
 
 <!-- cpt-cf-id-content -->
 **Actor**: `cpt-cf-credstore-actor-tenant-admin`
@@ -463,7 +463,7 @@ Secret values **MUST NOT** appear in logs, error messages, or debug output at an
 
 #### UC-004: Private Secret Access Denied vs Shadowing with Fallback
 
-- [ ] `p1` - **ID**: `cpt-cf-credstore-uc-private-denied`
+- [ ] `p1` - **ID**: `cpt-cf-credstore-usecase-private-denied`
 
 <!-- cpt-cf-id-content -->
 **Actor**: `cpt-cf-credstore-actor-oagw`
@@ -505,7 +505,7 @@ Secret values **MUST NOT** appear in logs, error messages, or debug output at an
 
 #### UC-005: Tenant CRUD Own Secrets
 
-- [ ] `p1` - **ID**: `cpt-cf-credstore-uc-crud`
+- [ ] `p1` - **ID**: `cpt-cf-credstore-usecase-crud`
 
 <!-- cpt-cf-id-content -->
 **Actor**: `cpt-cf-credstore-actor-tenant-admin`
@@ -530,7 +530,7 @@ Secret values **MUST NOT** appear in logs, error messages, or debug output at an
 
 #### UC-006: Owner-Only Private Secret Access Control
 
-- [ ] `p1` - **ID**: `cpt-cf-credstore-uc-private-owner-only`
+- [ ] `p1` - **ID**: `cpt-cf-credstore-usecase-private-owner-only`
 
 <!-- cpt-cf-id-content -->
 **Actor**: `cpt-cf-credstore-actor-tenant-admin`

@@ -2,7 +2,9 @@
 
 ## 1. Overview
 
-**Purpose**: LLM Gateway provides unified access to multiple LLM providers. Consumers interact with a single interface regardless of underlying provider. Gateway normalizes requests and responses but does not execute tools or interpret content — this is consumer responsibility.
+### 1.1 Purpose
+
+LLM Gateway provides unified access to multiple LLM providers. Consumers interact with a single interface regardless of underlying provider. Gateway normalizes requests and responses but does not execute tools or interpret content — this is consumer responsibility.
 
 LLM Gateway is the central integration point between platform consumers and external AI providers. It abstracts provider differences — request formats, authentication, error handling, rate limits — behind a unified API. Consumers send requests in a normalized format; Gateway translates them to provider-specific calls and normalizes responses back.
 
@@ -14,10 +16,13 @@ Gateway is stateless by design. It does not store conversation history or execut
 - **Platform Developers** — build AI-powered features using Gateway API
 - **External API Consumers** — third-party developers accessing AI capabilities via public API
 
-**Key Problems Solved**:
+### 1.2 Background / Problem Statement
+
 - **Provider fragmentation**: single API abstracts differences between OpenAI, Anthropic, Google, and other providers
 - **Governance**: budget enforcement, rate limiting, usage tracking, and audit logging at tenant level
 - **Security**: pre-call and post-response interceptors for content moderation and PII filtering
+
+### 1.3 Goals (Business Outcomes)
 
 **Success Criteria**:
 - Gateway overhead < 50ms P99 (excluding provider latency)
@@ -29,6 +34,14 @@ Gateway is stateless by design. It does not store conversation history or execut
 - Embeddings generation
 - Tool/function calling
 - Structured output with schema validation
+
+### 1.4 Glossary
+
+| Term | Definition |
+|------|------------|
+| OAGW | Outbound API Gateway — handles external API calls, credential injection, circuit breaking |
+| TTFT | Time-to-first-token — latency until first response chunk |
+| GTS | Generic Type System — JSON Schema-based type definitions |
 
 ## 2. Actors
 
@@ -72,7 +85,23 @@ Gateway is stateless by design. It does not store conversation history or execut
 
 **Role**: Compliance event logging.
 
-## 3. Functional Requirements
+## 3. Operational Concept & Environment
+
+None
+
+## 4. Scope
+
+None
+
+### 4.1 In Scope
+
+None
+
+### 4.2 Out of Scope
+
+None
+
+## 5. Functional Requirements
 
 ### P1 — Core
 
@@ -280,7 +309,18 @@ Cross-cutting concern — applies to all operations, no dedicated UC.
 
 **Actors**: `cpt-cf-llm-gateway-actor-audit-module`
 
-## 4. Use Cases
+## 6. Non-Functional Requirements
+
+### Scalability
+
+- [ ] `p1` - **ID**: `cpt-cf-llm-gateway-nfr-scalability-v1`
+Horizontal scaling without state coordination. Stateless design with exception for temporary async job state.
+
+## 7. Public Library Interfaces
+
+None
+
+## 8. Use Cases
 
 #### UC-001: Chat Completion
 
@@ -718,10 +758,18 @@ Cross-cutting concern — applies to all operations, no dedicated UC.
 - Partial results available as completed
 - Batch cancellation supported
 
-## 5. Non-functional requirements
+## 9. Acceptance Criteria
 
-#### Scalability
+None
 
-- [ ] `p1` - **ID**: `cpt-cf-llm-gateway-nfr-scalability-v1`
-Horizontal scaling without state coordination. Stateless design with exception for temporary async job state.
+## 10. Dependencies
 
+None
+
+## 11. Assumptions
+
+None
+
+## 12. Risks
+
+None

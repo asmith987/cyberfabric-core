@@ -225,17 +225,36 @@ For architectural decisions with broad impact, check ALL applicable domains.
 - [ ] Links to impacted feature specifications are provided (when applicable)
 - [ ] Each link has a short explanation of relevance
 - [ ] Scope of impact is explicitly stated (what changes, what does not)
+- [ ] ADR `adr` ID is referenced in DESIGN under `### Architecture Drivers` (coverage: **required**)
+- [ ] PRD does NOT backtick-reference this ADR ID (coverage: **prohibited**)
 
 ### ARCH-ADR-006: ADR Metadata Quality
 **Severity**: CRITICAL
 **Ref**: Michael Nygard ADR Template — Title, Status, Date fields
 
+- [ ] YAML frontmatter present with `status` and `date` fields
+- [ ] `status` uses consistent vocabulary: `proposed`, `accepted`, `deprecated`, `superseded`
+- [ ] `date` is in ISO 8601 format (YYYY-MM-DD)
 - [ ] Title is descriptive and action-oriented
-- [ ] Date is present and unambiguous
-- [ ] Status is present and uses a consistent vocabulary (e.g., Proposed, Accepted, Rejected, Deprecated, Superseded)
+- [ ] `adr` ID defined in plain `**ID**:` form (task/priority prohibited — no checkbox)
 - [ ] Decision owner/approver is identified (person/team)
 - [ ] Scope / affected systems are stated
 - [ ] If this record supersedes another decision record, the superseded record is linked
+
+### ARCH-ADR-006b: Required Headings (cf-sdlc)
+**Severity**: HIGH
+**Ref**: constraints.json — ADR headings
+
+- [ ] `## Context and Problem Statement` present (required)
+- [ ] `## Decision Drivers` present (required)
+- [ ] `## Considered Options` present (required)
+- [ ] `## Decision Outcome` present (required)
+- [ ] `### Consequences` present under Decision Outcome (required)
+- [ ] `### Confirmation` present under Decision Outcome (required)
+- [ ] `## Pros and Cons of the Options` present (required)
+- [ ] One `### {Option Name}` per considered option under Pros and Cons (optional, multiple allowed)
+- [ ] `## More Information` present (optional)
+- [ ] `## Traceability` present (optional)
 
 ### ARCH-ADR-007: Decision Drivers (if present)
 **Severity**: MEDIUM
@@ -890,7 +909,7 @@ Full output format:
 When reviewing PRs that add or change Architecture Decision Records, additionally focus on:
 
 - [ ] Ensure the problem is module/system scoped, not generic and repeatable
-- [ ] Compliance with `docs/spec-templates/ADR.md` template structure
+- [ ] Compliance with `docs/spec-templates/cf-sdlc/ADR/template.md` template structure
 - [ ] Ensure the problem is not already solved by other existing ADRs in `docs/adrs/`
 - [ ] Alternatives are genuinely different approaches (not straw men)
 - [ ] Decision rationale is concrete and traceable to project constraints

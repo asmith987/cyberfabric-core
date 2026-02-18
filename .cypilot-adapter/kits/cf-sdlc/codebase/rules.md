@@ -122,13 +122,15 @@ CODE implementation triggers upstream checkbox updates through markers:
 **Full Cascade Chain**:
 
 ```
-CODE markers exist
+CODE markers exist for flow/algo/state/dod
     ↓
-FEATURE: slug:flow/algo/state/req → [x]
+FEATURE: flow/algo/state/dod → [x]
     ↓
-FEATURE: ALL IDs [x] → [x] in DECOMPOSITION
+FEATURE: ALL IDs [x] → featstatus → [x]
     ↓
-DECOMPOSITION: [x] → (fr, principle, component, etc.) → [x]
+DECOMPOSITION: feature → [x]
+    ↓
+DECOMPOSITION: ALL features [x] → status → [x]
     ↓
 PRD: fr/nfr [x] when ALL downstream refs [x]
 DESIGN: principle/constraint/component/seq/dbtable [x] when ALL refs [x]
@@ -148,12 +150,12 @@ DESIGN: principle/constraint/component/seq/dbtable [x] when ALL refs [x]
    - All CDSL steps marked `[x]` → mark as `[x]` in FEATURE
 
 3. **After completing FEATURE**:
-   - All `cpt-{system}-feature-{slug}` in FEATURE are `[x]` → mark as `[x]` in DECOMPOSITION
-   - Update feature status: `⏳ PLANNED` → `🔄 IN_PROGRESS` → `✅ IMPLEMENTED`
+   - All flow/algo/state/dod IDs marked `[x]` → mark `featstatus` as `[x]` under FEATURE H1
+   - Mark corresponding `feature` entry as `[x]` in DECOMPOSITION
 
 4. **After DECOMPOSITION updated**:
-   - Check if all `cpt-{system}-*` in DECOMPOSITION are `[x]`
-   - If all refs for a PRD/DESIGN ID are `[x]` → mark that ID as `[x]` in PRD/DESIGN
+   - All `feature` entries `[x]` → mark `status` as `[x]` under DECOMPOSITION H1
+   - If all downstream refs for a PRD/DESIGN ID are `[x]` → mark that ID as `[x]` in PRD/DESIGN
 
 **Validation Checks**:
 - Prompt `cypilot validate` will warn if code marker exists but FEATURE checkbox is `[ ]`
@@ -301,7 +303,7 @@ def validate_credentials(username, password):
 ### Phase 5: Quality Check
 
 - [ ] Self-review against `checklist.md`
-- [ ] **If Traceability Mode ON**: Verify all `cpt-{system}-{req|flow|algo|state|test}-*` IDs have markers
+- [ ] **If Traceability Mode ON**: Verify all `cpt-{system}-{dod|flow|algo|state}-*` IDs have markers
 - [ ] **If Traceability Mode ON**: Ensure no orphaned markers
 - [ ] Run tests to verify implementation
 - [ ] Verify engineering best practices followed
@@ -309,7 +311,7 @@ def validate_credentials(username, password):
 ### Phase 6: Tag Verification (Traceability Mode ON only)
 
 **Before finishing implementation:**
-- [ ] Search codebase for ALL IDs from DESIGN (flow/algo/state/req/test)
+- [ ] Search codebase for ALL `to_code: true` IDs from FEATURE (flow/algo/state/dod)
 - [ ] Confirm tags exist in files that implement corresponding logic/tests
 - [ ] If any DESIGN ID has no code tag → report as gap and/or add tag
 
@@ -346,7 +348,7 @@ For each ID/scope marked as implemented:
 - [ ] Phase postfix present on all markers
 
 **Coverage checks**:
-- [ ] All `cpt-{system}-{dod|flow|algo|state|test}-*` IDs have markers
+- [ ] All `cpt-{system}-{dod|flow|algo|state}-*` IDs have markers
 - [ ] No orphaned markers (marker ID not in design)
 - [ ] No stale markers (design ID changed/deleted)
 - [ ] Design checkboxes synced with code markers

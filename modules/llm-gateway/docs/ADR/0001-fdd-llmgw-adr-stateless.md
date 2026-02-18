@@ -32,6 +32,14 @@ Chosen option: "Stateless", because it enables horizontal scaling without coordi
 * Bad, because consumers must manage and provide conversation context
 * Exception: temporary async job state stored in distributed cache
 
+### Confirmation
+
+None
+
+## Pros and Cons of the Options
+
+None
+
 ## Related Design Elements
 
 **Requirements**:

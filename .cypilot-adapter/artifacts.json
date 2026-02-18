@@ -4,13 +4,71 @@
   "kits": {
     "cf-sdlc": {
       "format": "Cypilot",
-      "path": ".cypilot-adapter/kits/cf-sdlc"
+      "path": ".cypilot-adapter/kits/cf-sdlc",
+      "artifacts": {
+        "ADR": {
+          "template": "{project_root}/docs/spec-templates/cf-sdlc/ADR/template.md",
+          "examples": "{project_root}/docs/spec-templates/cf-sdlc/ADR/examples"
+        },
+        "DECOMPOSITION": {
+          "template": "{project_root}/docs/spec-templates/cf-sdlc/DECOMPOSITION/template.md",
+          "examples": "{project_root}/docs/spec-templates/cf-sdlc/DECOMPOSITION/examples"
+        },
+        "DESIGN": {
+          "template": "{project_root}/docs/spec-templates/cf-sdlc/DESIGN/template.md",
+          "examples": "{project_root}/docs/spec-templates/cf-sdlc/DESIGN/examples"
+        },
+        "FEATURE": {
+          "template": "{project_root}/docs/spec-templates/cf-sdlc/FEATURE/template.md",
+          "examples": "{project_root}/docs/spec-templates/cf-sdlc/FEATURE/examples"
+        },
+        "PRD": {
+          "template": "{project_root}/docs/spec-templates/cf-sdlc/PRD/template.md",
+          "examples": "{project_root}/docs/spec-templates/cf-sdlc/PRD/examples"
+        }
+      }
     }
   },
   "ignore": [
     {
-      "reason": "Ignore module 'system' (not SDLC-documented yet: missing required PRD/DESIGN).",
-      "patterns": ["modules/system/*"]
+      "reason": "Ignore 'modules/system' parent directory — not a module, only a grouping for system submodules.",
+      "patterns": ["modules/system"]
+    },
+    {
+      "reason": "Ignore module 'api-gateway' (not SDLC-documented yet: missing required PRD/DESIGN).",
+      "patterns": ["modules/system/api-gateway/*"]
+    },
+    {
+      "reason": "Ignore module 'grpc-hub' (not SDLC-documented yet: missing required PRD/DESIGN).",
+      "patterns": ["modules/system/grpc-hub/*"]
+    },
+    {
+      "reason": "Ignore module 'module-orchestrator' (not SDLC-documented yet: missing required PRD/DESIGN).",
+      "patterns": ["modules/system/module-orchestrator/*"]
+    },
+    {
+      "reason": "Ignore module 'nodes-registry' (not SDLC-documented yet: missing required PRD/DESIGN).",
+      "patterns": ["modules/system/nodes-registry/*"]
+    },
+    {
+      "reason": "Ignore module 'oagw' (not SDLC-documented yet: missing required PRD/DESIGN).",
+      "patterns": ["modules/system/oagw/*"]
+    },
+    {
+      "reason": "Ignore module 'tenant-resolver' (not SDLC-documented yet: missing required PRD/DESIGN).",
+      "patterns": ["modules/system/tenant-resolver/*"]
+    },
+    {
+      "reason": "Ignore module 'types' (not SDLC-documented yet: missing required PRD/DESIGN).",
+      "patterns": ["modules/system/types/*"]
+    },
+    {
+      "reason": "Ignore module 'types-registry' (not SDLC-documented yet: missing required PRD/DESIGN).",
+      "patterns": ["modules/system/types-registry/*"]
+    },
+    {
+      "reason": "Ignore module 'types-sdk' (not SDLC-documented yet: missing required PRD/DESIGN).",
+      "patterns": ["modules/system/types-sdk/*"]
     },
     {
       "reason": "Ignore module 'simple-user-settings' (not SDLC-documented yet: missing required PRD/DESIGN).",
@@ -50,6 +108,26 @@
       "autodetect": [
         {
           "system_root": "{project_root}/modules/$system",
+          "artifacts_root": "{system_root}/docs",
+          "artifacts": {
+            "PRD": { "pattern": "PRD.md", "traceability": "FULL", "required": true },
+            "DESIGN": { "pattern": "DESIGN.md", "traceability": "FULL", "required": true },
+            "ADR": { "pattern": "ADR/*.md", "traceability": "FULL", "required": false },
+            "DECOMPOSITION": { "pattern": "DECOMPOSITION.md", "traceability": "FULL", "required": false },
+            "FEATURE": { "pattern": "features/*.md", "traceability": "FULL", "required": false }
+          },
+          "codebase": [
+            { "name": "Modules", "path": "{system_root}/src", "extensions": [".rs"] },
+            { "name": "Tests", "path": "{system_root}/tests", "extensions": [".rs"] }
+          ],
+          "validation": {
+            "require_kind_registered_in_kit": true,
+            "require_md_extension": true,
+            "fail_on_unmatched_markdown": true
+          }
+        },
+        {
+          "system_root": "{project_root}/modules/system/$system",
           "artifacts_root": "{system_root}/docs",
           "artifacts": {
             "PRD": { "pattern": "PRD.md", "traceability": "FULL", "required": true },

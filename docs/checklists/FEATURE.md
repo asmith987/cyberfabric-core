@@ -148,14 +148,41 @@ Before evaluating each checklist item, the expert MUST:
 **Severity**: CRITICAL
 **Ref**: IEEE 1016-2009 §5.4.1 (Design entity attributes)
 
+- [ ] `featstatus` ID defined under H1 title in checkbox form (`- [ ] \`pN\` - **ID**: \`cpt-{system}-featstatus-{slug}\``)
+- [ ] `feature` reference present under H1 title in checkbox form (`- [x] \`pN\` - \`cpt-{system}-feature-{slug}\``) — backreference to DECOMPOSITION entry
 - [ ] Feature identifier is present and stable (unique within the project)
-- [ ] Feature status documented
 - [ ] Overall Design reference present
 - [ ] Requirements source reference present
 - [ ] Actors/user roles are defined and referenced consistently
 - [ ] Feature scope clearly stated
 - [ ] Feature boundaries explicit
 - [ ] Out-of-scope items documented
+
+### ARCH-FDESIGN-001b: Required Headings (cf-sdlc)
+**Severity**: HIGH
+**Ref**: constraints.json — FEATURE headings
+
+- [ ] `## Feature Context` present (required)
+- [ ] `### Overview` present (required)
+- [ ] `### Purpose` present (required)
+- [ ] `### Actors` present (required)
+- [ ] `### References` present (required)
+- [ ] `## Actor Flows (CDSL)` present (required)
+- [ ] `## Processes / Business Logic (CDSL)` present (required)
+- [ ] `## States (CDSL)` present (optional)
+- [ ] `## Definitions of Done` present (required)
+- [ ] `## Acceptance Criteria` present (required)
+
+### ARCH-FDESIGN-001c: ID Kinds and Code Traceability (cf-sdlc)
+**Severity**: HIGH
+**Ref**: constraints.json — FEATURE identifiers with `to_code: true`
+
+- [ ] `flow` IDs (if any) use checkbox form; `to_code: true` — require `@cpt-flow:` markers in code
+- [ ] `algo` IDs (if any) use checkbox form; `to_code: true` — require `@cpt-algo:` markers in code
+- [ ] `state` IDs (if any) use checkbox form; `to_code: true` — require `@cpt-state:` markers in code
+- [ ] `dod` IDs (at least one required) use checkbox form; `to_code: true` — require `@cpt-req:` markers in code
+- [ ] All FEATURE ID kinds have task+priority **required**
+- [ ] Checkbox cascade: all flow/algo/state/dod `[x]` → `featstatus` `[x]` → DECOMPOSITION `feature` `[x]`
 
 ### ARCH-FDESIGN-002: Overall Design Alignment
 **Severity**: CRITICAL
@@ -261,12 +288,13 @@ Before evaluating each checklist item, the expert MUST:
 ### SEM-FDESIGN-005: Design Decomposition Consistency
 **Severity**: HIGH
 
-- [ ] Feature ID matches the entry in the DECOMPOSITION
+- [ ] Feature `feature` reference under H1 matches the DECOMPOSITION entry ID
 - [ ] Purpose, scope, and out-of-scope items align with the DECOMPOSITION entry
 - [ ] Dependencies in the feature design match the DECOMPOSITION dependency list
 - [ ] Requirements covered (FR/NFR) match the DECOMPOSITION mapping
 - [ ] Design principles and constraints covered match the DECOMPOSITION mapping
 - [ ] Domain entities, components, APIs, sequences, and data tables match the DECOMPOSITION entry
+- [ ] `featstatus` checkbox state is consistent with flow/algo/state/dod checkbox states
 
 ---
 

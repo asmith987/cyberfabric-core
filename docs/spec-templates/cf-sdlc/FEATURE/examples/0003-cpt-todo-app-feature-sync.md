@@ -25,6 +25,7 @@ Implement cross-device task synchronization via WebSocket with fallback to HTTP 
 - PRD: [PRD.md](../PRD.md)
 - Requirements: `cpt-examples-todo-app-nfr-data-persistence`, `cpt-examples-todo-app-contract-sync`
 - Design elements: `cpt-examples-todo-app-interface-websocket`, `cpt-examples-todo-app-constraint-browser-compat`, `cpt-examples-todo-app-principle-offline-first`
+
 ---
 
 ## 2. Actor Flows (CDSL)
@@ -51,8 +52,7 @@ Implement cross-device task synchronization via WebSocket with fallback to HTTP 
 
 - [ ] `p2` - **ID**: `cpt-examples-todo-app-dod-sync`
 
-## 6. Acceptance Criteria
-
+**Acceptance Criteria**:
 - [ ] WebSocket connection established on app load
 - [ ] Task changes sync across devices within 5 seconds
 - [ ] Offline changes queued and synced when connection restored
@@ -62,6 +62,10 @@ Implement cross-device task synchronization via WebSocket with fallback to HTTP 
 - [ ] Unit tests for sync queue and conflict resolution
 - [ ] Integration tests for WebSocket protocol
 - [ ] E2E tests for cross-device sync scenarios
+
+## 6. Acceptance Criteria
+
+See Definitions of Done (`cpt-examples-todo-app-dod-sync`) for acceptance criteria.
 
 ## 7. Additional Context (optional)
 

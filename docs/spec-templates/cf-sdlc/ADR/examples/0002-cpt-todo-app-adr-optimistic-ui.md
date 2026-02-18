@@ -1,8 +1,9 @@
+---
+status: accepted
+date: 2026-02-07
+--- 
+
 # ADR-0002: Optimistic UI Updates
-
-**Date**: 2026-02-07
-
-**Status**: Accepted
 
 **ID**: `cpt-examples-todo-app-adr-optimistic-ui`
 

@@ -1,14 +1,14 @@
 # Decomposition: {PROJECT_NAME}
 
+**Overall implementation status:**
+- [ ] `p1` - **ID**: `cpt-{system}-status-{slug}`
+
 ## 1. Overview
 
 { Description of how the DESIGN was decomposed into features, the decomposition strategy, and any relevant decomposition rationale. }
 
 
 ## 2. Entries
-
-**Overall implementation status:**
-- [ ] `p1` - **ID**: `cpt-{system}-status-overall`
 
 ### 1. [{Feature Title 1}](feature-{slug}/) - HIGH
 
@@ -53,6 +53,7 @@
 
 - **Data**:
   - [ ] `p1` - `cpt-{system}-dbtable-{slug}`
+  - `cpt-{system}-db-{slug}`
 
 ### 2. [{Feature Title 2}](feature-{slug}/) - MEDIUM
 

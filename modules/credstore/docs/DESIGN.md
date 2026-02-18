@@ -70,7 +70,7 @@ The architecture provides simple CRUD operations (get, put, delete) for tenant-s
 
 | NFR ID | NFR Summary | Allocated To | Design Response | Verification Approach |
 |--------|-------------|--------------|-----------------|----------------------|
-| `cpt-cf-credstore-fr-nfr-confidentiality` | Secret values never in logs | Gateway + plugins | `SecretValue` wrapper type with custom `Debug`/`Display` that redacts content; log scrubbing at transport layer | Automated log scan in integration tests |
+| `cpt-cf-credstore-nfr-confidentiality` | Secret values never in logs | Gateway + plugins | `SecretValue` wrapper type with custom `Debug`/`Display` that redacts content; log scrubbing at transport layer | Automated log scan in integration tests |
 
 ### 1.3 Architecture Layers
 
@@ -132,7 +132,7 @@ The following capabilities are explicitly out of scope for v1:
 
 #### Authorization in Gateway
 
-- [ ] `p1` - **ID**: `cpt-cf-credstore-design-authz-gateway`
+- [ ] `p1` - **ID**: `cpt-cf-credstore-principle-authz-gateway`
 
 Authorization (permission checks for `Secrets:Read` and `Secrets:Write`) is enforced exclusively in the gateway layer. Plugins are "storage adapters" that delegate to backends and MUST NOT implement authorization or policy decisions. This prevents inconsistent behavior across backends.
 
@@ -140,13 +140,13 @@ Authorization (permission checks for `Secrets:Read` and `Secrets:Write`) is enfo
 
 #### Stateless Key Mapping
 
-- [ ] `p1` - **ID**: `cpt-cf-credstore-design-stateless-mapping`
+- [ ] `p1` - **ID**: `cpt-cf-credstore-principle-stateless-mapping`
 
 The VendorA Credstore plugin uses a deterministic, stateless mapping from `(tenant_id, key, optional owner_id)` to Credstore ExternalID. Private secrets include `owner_id` in the mapping to support per-owner namespacing. No local mapping database is required. This simplifies operations and eliminates a failure mode.
 
 #### Tenant from SecurityCtx
 
-- [ ] `p1` - **ID**: `cpt-cf-credstore-design-tenant-from-ctx`
+- [ ] `p1` - **ID**: `cpt-cf-credstore-principle-tenant-from-ctx`
 
 For self-service operations, the tenant is always derived from `SecurityCtx.tenant_id()`. This reduces API surface, prevents misuse, and aligns with existing platform patterns (consistent with `tenant_resolver`).
 
@@ -154,13 +154,13 @@ For self-service operations, the tenant is always derived from `SecurityCtx.tena
 
 #### OAuth2 for Credstore
 
-- [ ] `p1` - **ID**: `cpt-cf-credstore-design-oauth2`
+- [ ] `p1` - **ID**: `cpt-cf-credstore-constraint-oauth2`
 
 All Credstore REST calls require OAuth2 client credentials authentication. Token acquisition and caching are handled by a shared `oauth_token_provider` component.
 
 #### No Secret Logging
 
-- [ ] `p1` - **ID**: `cpt-cf-credstore-design-no-secret-logging`
+- [ ] `p1` - **ID**: `cpt-cf-credstore-constraint-no-secret-logging`
 
 Secret values MUST NOT appear in any log output, error messages, or debug traces. The `SecretValue` type implements `Debug` and `Display` with redacted output.
 
@@ -217,12 +217,21 @@ graph TB
 
 **Components**:
 
-| Component | Responsibility | Interface |
-|-----------|---------------|-----------|
-| `credstore-sdk` | Trait definitions, models, error types | `CredStoreClient`, `CredStorePluginClient` |
-| `credstore` | Authorization, hierarchical resolution (walk-up algorithm), sharing mode enforcement, plugin selection, REST endpoints | Axum routes, ClientHub registration, tenant_resolver queries |
-| `credstore_vendor_a_plugin` | VendorA Credstore REST integration (simple per-tenant CRUD) | HTTP client, ExternalID mapping |
-| `os_protected_storage` | OS keychain integration (P2) — simple per-tenant CRUD | Platform-native secure storage APIs |
+- [ ] `p1` - **ID**: `cpt-cf-credstore-component-sdk`
+
+`credstore-sdk` — Trait definitions, models, error types. Interfaces: `CredStoreClient`, `CredStorePluginClient`.
+
+- [ ] `p1` - **ID**: `cpt-cf-credstore-component-gateway`
+
+`credstore` — Authorization, hierarchical resolution (walk-up algorithm), sharing mode enforcement, plugin selection, REST endpoints. Interfaces: Axum routes, ClientHub registration, tenant_resolver queries.
+
+- [ ] `p1` - **ID**: `cpt-cf-credstore-component-vendor-a-plugin`
+
+`credstore_vendor_a_plugin` — VendorA Credstore REST integration (simple per-tenant CRUD). Interfaces: HTTP client, ExternalID mapping.
+
+- [ ] `p2` - **ID**: `cpt-cf-credstore-component-os-protected-storage`
+
+`os_protected_storage` — OS keychain integration (P2) — simple per-tenant CRUD. Interfaces: Platform-native secure storage APIs.
 
 **Interactions**:
 - Consumer → Gateway: via `CredStoreClient` trait through ClientHub
@@ -232,6 +241,8 @@ graph TB
 - VendorA Plugin → OAuth provider: token acquisition and caching
 
 ### 4.3 API Contracts
+
+- [ ] `p1` - **ID**: `cpt-cf-credstore-interface-vendor-a-rest`
 
 **Technology**: REST/OpenAPI + Rust traits (ClientHub)
 
@@ -436,9 +447,11 @@ The CredStore Gateway supports two distinct integration patterns:
 
 **Implementation Note**: OAGW is a ModKit module that uses the standard CredStore SDK client. There is no separate integration path or direct backend access. All operations flow through Gateway→Plugin→Backend.
 
-### 4.6 Sequences & Interactions
+### 4.6 Interactions & Sequences
 
 #### Self-Service CRUD (put example)
+
+- [ ] `p1` - **ID**: `cpt-cf-credstore-seq-self-service-crud`
 
 ```mermaid
 sequenceDiagram
@@ -459,6 +472,8 @@ sequenceDiagram
 
 #### Write Flow (VendorA Credstore — upsert)
 
+- [ ] `p1` - **ID**: `cpt-cf-credstore-seq-vendor-a-write`
+
 ```mermaid
 sequenceDiagram
     participant P as credstore_vendor_a_plugin
@@ -475,9 +490,9 @@ sequenceDiagram
 ```
 
 **Key Flows**: Reference use cases from PRD:
-- `cpt-cf-credstore-uc-create-shared` → Self-Service CRUD (with `sharing: shared`)
-- `cpt-cf-credstore-uc-crud` → Self-Service CRUD
-- `cpt-cf-credstore-uc-hierarchical-resolve` → Hierarchical resolution implemented in Gateway module
+- `cpt-cf-credstore-usecase-create-shared` → Self-Service CRUD (with `sharing: shared`)
+- `cpt-cf-credstore-usecase-crud` → Self-Service CRUD
+- `cpt-cf-credstore-usecase-hierarchical-resolve` → Hierarchical resolution implemented in Gateway module
 
 **Hierarchical Resolution Implementation**: The Gateway module implements a two-phase walk-up algorithm:
 1. Extract `tenant_id` and `subject_id` from SecurityCtx
@@ -509,7 +524,7 @@ sequenceDiagram
 
 This allows User B to access the parent's shared credential. Meanwhile, User A in tenant X would get their own private `key1` (phase 1 hit).
 
-### 4.7 Database Schema
+### 4.7 Database schemas & tables
 
 No local database. Secrets are persisted in the external backend (VendorA Credstore or OS keychain). The gateway and plugins are stateless.
 

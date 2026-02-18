@@ -22,11 +22,9 @@ Enables users to efficiently navigate and manage large numbers of tasks by apply
 
 - Overall Design: [DESIGN.md](../DESIGN.md)
 - PRD: [PRD.md](../PRD.md)
-- Decomposition:
-  - [x] `p2` - `cpt-examples-todo-app-feature-logic`
+- Decomposition: `cpt-examples-todo-app-feature-logic`
 - Requirements: `cpt-examples-todo-app-fr-filter-tasks`, `cpt-examples-todo-app-nfr-response-time`, `cpt-examples-todo-app-interface-rest-api`, `cpt-examples-todo-app-interface-task-model`
-- Dependencies:
-  - [x] `p2` - `cpt-examples-todo-app-feature-core`
+- Dependencies: `cpt-examples-todo-app-feature-core`
 
 ## 2. Actor Flows (CDSL)
 

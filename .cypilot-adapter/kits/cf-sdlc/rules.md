@@ -1,37 +1,84 @@
-# Common rules
+# Common Rules (cf-sdlc)
 
-## Navigation rules
+## Navigation Rules
 
 ALWAYS open and follow `{cypilot_path}/requirements/artifacts-registry.md` WHEN creating/registering artifacts in `artifacts.json`
+
+## Artifact Chain
+
+```
+PRD → ADR → DESIGN → DECOMPOSITION → FEATURE → CODE
+```
+
+| From | To | Mechanism |
+|------|----|-----------|
+| PRD `fr`/`nfr` | DESIGN | **Required** coverage under `Architecture Drivers` |
+| ADR `adr` | DESIGN | **Required** reference under `Architecture Drivers`; plus `**ADRs**: \`cpt-...\`` inline on principles/constraints |
+| DESIGN `component` | DECOMPOSITION | **Required** coverage in feature entries |
+| DECOMPOSITION `feature` | FEATURE | **Required** coverage under FEATURE H1 title |
+| FEATURE `flow`/`algo`/`state`/`dod` | CODE | `to_code: true` — traced via `@cpt-*` markers |
 
 ## ID Format (REQUIRED)
 
 All Cypilot IDs MUST:
 
-- Use format: `cpt-{hierarchy-prefix}-{kind}-{slug}`
+- Use format: `cpt-{system}-{kind}-{slug}`
 - Match regex: `^cpt-[a-z0-9][a-z0-9-]+$`
 - Be wrapped in backticks: `` `cpt-...` ``
 - Use only lowercase `a-z`, digits `0-9`, and `-` (kebab-case)
 
-**ID definition**:
+### ID Definition
 
-When constraints require `task` and `priority` for an ID kind, ALWAYS use the checkbox form (`- [ ] `pN` - **ID**: ...`).
+When constraints require `task` and `priority` for an ID kind, ALWAYS use the checkbox form:
 
-```text
-- [ ] `p1` - **ID**: `cpt-...`
+```markdown
+- [ ] `p1` - **ID**: `cpt-{system}-{kind}-{slug}`
 ```
 
-When constraints prohibit or allow `task` and `priority` for an ID kind, use the plain '**ID**:' form.
+When constraints prohibit or only allow `task` and `priority`, use the plain form:
 
-```text
-**ID**: `cpt-...`
+```markdown
+**ID**: `cpt-{system}-{kind}-{slug}`
 ```
 
-**ID reference**:
+### ID Reference
 
-```text
-`cpt-...`
-[x] `p1` - `cpt-...`
+Plain inline reference (any backticked `cpt-*` ID in text):
+
+```markdown
+`cpt-{system}-{kind}-{slug}`
 ```
 
-Any inline `` `cpt-...` `` in text is treated as an ID reference.
+Tracked reference with task checkbox and priority (used when constraints require `task`+`priority` on the reference):
+
+```markdown
+- [x] `p1` - `cpt-{system}-{kind}-{slug}`
+```
+
+### H1-Level IDs
+
+Some IDs are placed directly under the document H1 title (before any H2):
+
+- **DECOMPOSITION**: `status` ID (definition, checkbox form) — overall implementation status
+- **FEATURE**: `featstatus` ID (definition, checkbox form) + `feature` ID (reference, checkbox form back to DECOMPOSITION)
+
+### ADR YAML Frontmatter
+
+ADR files MUST start with YAML frontmatter:
+
+```yaml
+---
+status: {proposed | accepted | deprecated | superseded}
+date: {YYYY-MM-DD}
+---
+```
+
+## Template and Example Paths
+
+| Artifact | Template | Examples |
+|----------|----------|----------|
+| PRD | `docs/spec-templates/cf-sdlc/PRD/template.md` | — |
+| ADR | `docs/spec-templates/cf-sdlc/ADR/template.md` | `docs/spec-templates/cf-sdlc/ADR/examples/*.md` |
+| DESIGN | `docs/spec-templates/cf-sdlc/DESIGN/template.md` | — |
+| DECOMPOSITION | `docs/spec-templates/cf-sdlc/DECOMPOSITION/template.md` | `docs/spec-templates/cf-sdlc/DECOMPOSITION/examples/example.md` |
+| FEATURE | `docs/spec-templates/cf-sdlc/FEATURE/template.md` | `docs/spec-templates/cf-sdlc/FEATURE/examples/*.md` |

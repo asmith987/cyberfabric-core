@@ -318,8 +318,10 @@ Mark review as "PARTIAL" if not all domains completed.
 **Severity**: HIGH
 **Ref**: ISO/IEC/IEEE 42010:2022 §5.6 (architecture description consistency)
 
-- [ ] Feature IDs and slugs will match FEATURE artifacts
-- [ ] References between DECOMPOSITION and FEATURE artifacts are planned
+- [ ] Every `feature` ID has a corresponding FEATURE artifact file (`features/NNNN-cpt-{system}-feature-{slug}.md`)
+- [ ] Each FEATURE file contains a tracked checkbox reference to its `feature` ID under H1 (coverage: **required**)
+- [ ] Each FEATURE file defines a `featstatus` ID under H1 in checkbox form
+- [ ] Feature IDs and slugs match between DECOMPOSITION entries and FEATURE filenames
 - [ ] Any missing feature design is documented as intentional
 
 ### TRC-004: Impact Analysis Readiness
@@ -367,10 +369,10 @@ Mark review as "PARTIAL" if not all domains completed.
 ### CHK-001: Status Integrity
 **Severity**: HIGH
 
-- [ ] Overall status tasks is `[x]` only when ALL `cpt-{system}-*` blocks are `[x]`
-- [ ] `cpt-{system}-*` is `[x]` only when ALL nested `cpt-{system}-*` blocks within that feature are `[x]`
+- [ ] `status` ID (`cpt-{system}-status-{slug}`) defined under H1 title in checkbox form
+- [ ] `status` is `[x]` only when ALL `feature` entries are `[x]`
+- [ ] Each `feature` entry is `[x]` only when its corresponding FEATURE `featstatus` is `[x]`
 - [ ] Priority markers (`p1`-`p9`) are consistent between definitions and references
-- [ ] Status emoji matches checkbox state (⏳ for in-progress, ✅ for done)
 
 ### CHK-002: Reference Validity
 **Severity**: HIGH

@@ -66,6 +66,12 @@ This table maps non-functional requirements from PRD to specific design/architec
 |--------|-------------|--------------|-----------------|----------------------|
 | `cpt-{system}-nfr-{slug}` | {Brief NFR description} | {Component/layer/mechanism} | {How this design element realizes the NFR} | {How compliance is verified} |
 
+#### Key ADRs
+
+| ADR ID | Decision Summary |
+|--------|-----------------|
+| `cpt-{system}-adr-{slug}` | {Brief description of the architecture decision} |
+
 ### 1.3 Architecture Layers
 
 {Add architecture diagram here: Mermaid or ASCII}
@@ -120,6 +126,37 @@ This table maps non-functional requirements from PRD to specific design/architec
 
 {Describe all components covered by this design. For single-component designs, document that component. For multi-component designs, list all components with their responsibilities and interfaces. Include a component diagram (Mermaid or ASCII) showing structure and relationships.}
 
+```mermaid
+graph LR
+    A[React SPA] -->|REST/WS| B[API Server]
+    B --> C[PostgreSQL]
+    B --> D[Redis PubSub]
+    D --> B
+```
+
+#### {Component Name}
+
+- [ ] `p2` - **ID**: `cpt-{system}-component-{slug}`
+
+##### Why this component exists
+
+{What problem it solves / why it is needed in the architecture.}
+
+##### Responsibility scope
+
+{What this component owns: core responsibilities, invariants, main operations.}
+
+##### Responsibility boundaries
+
+{What it explicitly does NOT do; what is delegated to other components; constraints on responsibilities.}
+
+##### Related components (by ID)
+
+{List component-to-component relationships using component IDs.}
+
+- `cpt-{system}-component-{slug}` — {relationship type: depends on | calls | publishes to | subscribes to | shares model with | owns data for | etc.}
+
+
 ### 3.3 API Contracts
 
 {For module-level design: Document all public API contracts exposed by this module. For multi-component design: Document the primary API contracts exposed by each component. Add references to module designs}
@@ -131,6 +168,13 @@ This table maps non-functional requirements from PRD to specific design/architec
 | Method | Path | Description | Stability |
 |--------|------|-------------|-----------|
 | `{METHOD}` | `{/path}` | {Description} | {stable/unstable} |
+
+#### {Interface Name}
+
+- [ ] `p1` - **ID**: `cpt-{system}-interface-{slug}`
+
+**Technology**: {Protocol / Technology}
+**Data Format**: {Data format description}
 
 ### 3.4 Internal Dependencies
 
@@ -153,8 +197,10 @@ External systems, databases, and third-party services this module interacts with
 
 #### {External System / Database / Service Name}
 
+- **Contract**: `cpt-{system}-contract-{slug}`
+
 | Dependency Module | Interface Used | Purpose |
-|-------------------|---------------|---------|----------|
+|-------------------|---------------|---------|
 | {module_name} | {contract / SDK client / plugin} | {Why this module is needed} |
 
 **Dependency Rules** (per project conventions):

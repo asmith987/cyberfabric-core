@@ -36,6 +36,14 @@ Chosen option: "FileStorage URLs", because it keeps API requests small, provides
 * Bad, because adds FileStorage as required dependency
 * Bad, because adds latency for media fetch/store operations
 
+### Confirmation
+
+None
+
+## Pros and Cons of the Options
+
+None
+
 ## Related Design Elements
 
 **Requirements**:

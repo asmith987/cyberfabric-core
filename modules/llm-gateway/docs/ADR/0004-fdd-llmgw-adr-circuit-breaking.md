@@ -60,6 +60,14 @@ Characteristics:
 * Good, because reactive circuit breaking provides last-line defense
 * Bad, because two systems need coordination on health thresholds
 
+### Confirmation
+
+None
+
+## Pros and Cons of the Options
+
+None
+
 ## Related Design Elements
 
 **Requirements**:

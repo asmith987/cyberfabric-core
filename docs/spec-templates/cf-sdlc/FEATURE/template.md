@@ -1,5 +1,10 @@
 # Feature: {Feature Name}
 
+- [ ] `p1` - **ID**: `cpt-{system}-featstatus-{feature-slug}-implemented`
+
+<!-- reference to DECOMPOSITION entry -->
+- [ ] `p2` - `cpt-{system}-feature-{slug}`
+
 <!--
 =============================================================================
 FEATURE SPECIFICATION
@@ -26,9 +31,6 @@ CDSL PSEUDO-CODE:
 -->
 
 ## 1. Feature Context
-
-<!-- reference to DECOMPOSITION entry -->
-- [ ] `p2` `cpt-{system}-feature-{slug}`
 
 ### 1.1 Overview
 

@@ -64,8 +64,8 @@ REQUIREMENT LANGUAGE:
 
 **ID**: `cpt-{system}-actor-{slug}`
 
-**Role**: {Description of what this actor does and their relationship to the system.}
-**Needs**: {What this actor needs from the system.}
+- **Role**: {Description of what this actor does and their relationship to the system.}
+- **Needs**: {What this actor needs from the system.}
 
 ### 2.2 System Actors
 
@@ -73,7 +73,7 @@ REQUIREMENT LANGUAGE:
 
 **ID**: `cpt-{system}-actor-{slug}`
 
-**Role**: {Description of what this system actor does (external service, scheduler, etc.)}
+- **Role**: {Description of what this system actor does (external service, scheduler, etc.)}
 
 ## 3. Operational Concept & Environment
 
@@ -113,10 +113,10 @@ Functional requirements define WHAT the system must do. Group by feature area or
 
 The system **MUST** {do something specific and verifiable}.
 
-**Rationale**: {Why this requirement exists — business value or stakeholder need.}
-**Actors**: `cpt-{system}-actor-{slug}`
-**Verification Method** (optional): {Only if non-standard: analysis | inspection | demonstration | specialized test approach}
-**Acceptance Evidence** (optional): {Only if non-obvious: specific test suite path, analysis report, review checklist}
+- **Rationale**: {Why this requirement exists — business value or stakeholder need.}
+- **Actors**: `cpt-{system}-actor-{slug}`
+- **Verification Method** (optional): {Only if non-standard: analysis | inspection | demonstration | specialized test approach}
+- **Acceptance Evidence** (optional): {Only if non-obvious: specific test suite path, analysis report, review checklist}
 
 ## 6. Non-Functional Requirements
 
@@ -134,10 +134,10 @@ The system **MUST** {do something specific and verifiable}.
 
 The system **MUST** {measurable NFR with specific thresholds, e.g., "respond within 50ms at p95" (stricter than project default)}.
 
-**Threshold**: {Quantitative target with units and conditions}
-**Rationale**: {Why this module needs different/additional NFR}
-**Verification Method** (optional): {Only if non-standard approach needed}
-**Architecture Allocation**: See DESIGN.md § NFR Allocation for how this is realized
+- **Threshold**: {Quantitative target with units and conditions}
+- **Rationale**: {Why this module needs different/additional NFR}
+- **Verification Method** (optional): {Only if non-standard approach needed}
+- **Architecture Allocation**: See DESIGN.md § NFR Allocation for how this is realized
 
 ### 6.2 NFR Exclusions
 
@@ -155,10 +155,10 @@ Define the public API surface, versioning/compatibility guarantees, and integrat
 
 - [ ] `p1` - **ID**: `cpt-{system}-interface-{slug}`
 
-**Type**: {Rust module/trait/struct | REST API | CLI | Protocol | Data format}
-**Stability**: {stable | unstable | experimental}
-**Description**: {What this interface provides}
-**Breaking Change Policy**: {e.g., Major version bump required}
+- **Type**: {Rust module/trait/struct | REST API | CLI | Protocol | Data format}
+- **Stability**: {stable | unstable | experimental}
+- **Description**: {What this interface provides}
+- **Breaking Change Policy**: {e.g., Major version bump required}
 
 ### 7.2 External Integration Contracts
 
@@ -168,9 +168,9 @@ Contracts this library expects from external systems or provides to downstream c
 
 - [ ] `p2` - **ID**: `cpt-{system}-contract-{slug}`
 
-**Direction**: {provided by library | required from client}
-**Protocol/Format**: {e.g., HTTP/REST, gRPC, JSON Schema}
-**Compatibility**: {Backward/forward compatibility guarantees}
+- **Direction**: {provided by library | required from client}
+- **Protocol/Format**: {e.g., HTTP/REST, gRPC, JSON Schema}
+- **Compatibility**: {Backward/forward compatibility guarantees}
 
 ## 8. Use Cases
 

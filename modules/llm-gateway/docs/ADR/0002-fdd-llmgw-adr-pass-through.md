@@ -32,6 +32,15 @@ Chosen option: "Pass-through", because tool execution is consumer responsibility
 * Good, because Gateway remains simple and focused on routing
 * Bad, because consumers must implement tool execution logic
 
+### Confirmation
+
+None
+
+## Pros and Cons of the Options
+
+None
+
+
 ## Related Design Elements
 
 **Requirements**:
