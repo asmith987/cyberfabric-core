@@ -6,13 +6,14 @@ use crate::domain::credential::CredentialResolver;
 use crate::domain::error::DomainError;
 use crate::domain::model::{PassthroughMode, PathSuffixMode};
 use crate::domain::plugin::AuthContext;
+use crate::infra::proxy::{actions, resources};
 use futures_util::StreamExt;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use modkit_security::SecurityContext;
 use oagw_sdk::api::ErrorSource;
 use oagw_sdk::body::{Body, BodyStream, BoxError};
+use authz_resolver_sdk::pep::AccessRequest;
 use authz_resolver_sdk::PolicyEnforcer;
-use authz_resolver_sdk::pep::{AccessRequest, ResourceType};
 
 use crate::domain::services::{ControlPlaneService, DataPlaneService};
 
@@ -82,15 +83,14 @@ impl DataPlaneService for DataPlaneServiceImpl {
     ) -> Result<http::Response<Body>, DomainError> {
         let instance_uri = req.uri().to_string();
 
-        // Authorization check: require invoke permission
-        const PROXY_RESOURCE: ResourceType = ResourceType {
-            name: "gts.x.core.oagw.proxy.v1",
-            supported_properties: &[],
-        };
-
-        let request = AccessRequest::new().require_constraints(false);
         self.policy_enforcer
-            .access_scope_with(&ctx, &PROXY_RESOURCE, "invoke", None, &request)
+            .access_scope_with(
+                &ctx,
+                &resources::PROXY,
+                actions::INVOKE,
+                None,
+                &AccessRequest::new().require_constraints(false),
+            )
             .await?;
 
         // Normalize and parse alias and path_suffix from URI.
