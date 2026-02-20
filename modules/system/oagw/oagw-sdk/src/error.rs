@@ -49,6 +49,9 @@ pub enum ServiceGatewayError {
 
     #[error("{detail}")]
     RequestTimeout { detail: String, instance: String },
+
+    #[error("access forbidden: {detail}")]
+    Forbidden { detail: String },
 }
 
 /// Errors produced by the streaming helpers.

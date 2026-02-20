@@ -6,12 +6,52 @@ use std::time::Duration;
 use crate::domain::credential::CredentialResolver;
 use modkit::client_hub::ClientHub;
 use oagw_sdk::api::ServiceGatewayClientV1;
+use authz_resolver_sdk::{AuthZResolverClient, AuthZResolverError, EvaluationRequest, EvaluationResponse, EvaluationResponseContext, PolicyEnforcer};
+use async_trait::async_trait;
 
 use crate::domain::services::{
     ControlPlaneService, ControlPlaneServiceImpl, DataPlaneService, ServiceGatewayClientV1Facade,
 };
 use crate::infra::proxy::DataPlaneServiceImpl;
 use crate::infra::storage::{InMemoryCredentialResolver, InMemoryRouteRepo, InMemoryUpstreamRepo};
+
+/// Mock AuthZ resolver that always allows access for testing.
+struct MockAuthZResolverClient;
+
+#[async_trait]
+impl AuthZResolverClient for MockAuthZResolverClient {
+    async fn evaluate(
+        &self,
+        _request: EvaluationRequest,
+    ) -> Result<EvaluationResponse, AuthZResolverError> {
+        Ok(EvaluationResponse {
+            decision: true,
+            context: EvaluationResponseContext {
+                constraints: Vec::new(),
+                deny_reason: None,
+            },
+        })
+    }
+}
+
+/// Mock AuthZ resolver that always denies access for testing.
+pub struct DenyingAuthZResolverClient;
+
+#[async_trait]
+impl AuthZResolverClient for DenyingAuthZResolverClient {
+    async fn evaluate(
+        &self,
+        _request: EvaluationRequest,
+    ) -> Result<EvaluationResponse, AuthZResolverError> {
+        Ok(EvaluationResponse {
+            decision: false,
+            context: EvaluationResponseContext {
+                constraints: Vec::new(),
+                deny_reason: None,
+            },
+        })
+    }
+}
 
 /// Re-export for tests that need to set credentials after creation.
 pub use crate::infra::storage::credential_repo::InMemoryCredentialResolver as TestCredentialResolver;
@@ -69,6 +109,7 @@ impl Default for TestCpBuilder {
 /// `ClientHub` (e.g., via `TestCpBuilder`).
 pub struct TestDpBuilder {
     request_timeout: Option<Duration>,
+    authz_client: Option<Arc<dyn AuthZResolverClient>>,
 }
 
 impl TestDpBuilder {
@@ -76,6 +117,7 @@ impl TestDpBuilder {
     pub fn new() -> Self {
         Self {
             request_timeout: None,
+            authz_client: None,
         }
     }
 
@@ -83,6 +125,13 @@ impl TestDpBuilder {
     #[must_use]
     pub fn with_request_timeout(mut self, timeout: Duration) -> Self {
         self.request_timeout = Some(timeout);
+        self
+    }
+
+    /// Override the AuthZ client (useful for authorization tests).
+    #[must_use]
+    pub fn with_authz_client(mut self, client: Arc<dyn AuthZResolverClient>) -> Self {
+        self.authz_client = Some(client);
         self
     }
 
@@ -97,7 +146,12 @@ impl TestDpBuilder {
             .get::<dyn CredentialResolver>()
             .expect("CredentialResolver must be registered before building DP");
 
-        let mut svc = DataPlaneServiceImpl::new(cp, cred_resolver)
+        let authz_client = self
+            .authz_client
+            .unwrap_or_else(|| Arc::new(MockAuthZResolverClient));
+        let policy_enforcer = PolicyEnforcer::new(authz_client);
+
+        let mut svc = DataPlaneServiceImpl::new(cp, cred_resolver, policy_enforcer)
             .expect("failed to build DataPlaneServiceImpl in test");
         if let Some(timeout) = self.request_timeout {
             svc = svc.with_request_timeout(timeout);

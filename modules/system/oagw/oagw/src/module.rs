@@ -14,6 +14,7 @@ use modkit_security::SecurityContext;
 use oagw_sdk::api::ServiceGatewayClientV1;
 use tracing::info;
 use types_registry_sdk::{RegisterResult, RegisterSummary, TypesRegistryClient};
+use authz_resolver_sdk::{AuthZResolverClient, PolicyEnforcer};
 
 use crate::api::rest::routes;
 use crate::domain::services::{
@@ -33,7 +34,7 @@ pub struct AppState {
 /// Outbound API Gateway module: wires repos, services, and routes.
 #[modkit::module(
     name = "oagw",
-    deps = ["types-registry"],
+    deps = ["types-registry", "authz-resolver"],
     capabilities = [system, rest]
 )]
 pub struct OutboundApiGatewayModule {
@@ -76,9 +77,15 @@ impl Module for OutboundApiGatewayModule {
         ctx.client_hub()
             .register::<dyn CredentialResolver>(cred_resolver.clone());
 
+        // -- AuthZ resolver for permission checks --
+        let authz = ctx
+            .client_hub()
+            .get::<dyn AuthZResolverClient>()?;
+        let policy_enforcer = PolicyEnforcer::new(authz);
+
         // -- Data Plane init --
         let dp: Arc<dyn DataPlaneService> = Arc::new(
-            DataPlaneServiceImpl::new(cp.clone(), cred_resolver)?
+            DataPlaneServiceImpl::new(cp.clone(), cred_resolver, policy_enforcer)?
                 .with_request_timeout(Duration::from_secs(cfg.proxy_timeout_secs)),
         );
 

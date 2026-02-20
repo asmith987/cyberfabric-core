@@ -11,6 +11,8 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use modkit_security::SecurityContext;
 use oagw_sdk::api::ErrorSource;
 use oagw_sdk::body::{Body, BodyStream, BoxError};
+use authz_resolver_sdk::PolicyEnforcer;
+use authz_resolver_sdk::pep::{AccessRequest, ResourceType};
 
 use crate::domain::services::{ControlPlaneService, DataPlaneService};
 
@@ -30,6 +32,7 @@ pub struct DataPlaneServiceImpl {
     auth_registry: AuthPluginRegistry,
     rate_limiter: RateLimiter,
     request_timeout: Duration,
+    policy_enforcer: PolicyEnforcer,
 }
 
 impl DataPlaneServiceImpl {
@@ -39,6 +42,7 @@ impl DataPlaneServiceImpl {
     pub fn new(
         cp: Arc<dyn ControlPlaneService>,
         credential_resolver: Arc<dyn CredentialResolver>,
+        policy_enforcer: PolicyEnforcer,
     ) -> anyhow::Result<Self> {
         let http_client = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
@@ -57,6 +61,7 @@ impl DataPlaneServiceImpl {
             auth_registry,
             rate_limiter,
             request_timeout: REQUEST_TIMEOUT,
+            policy_enforcer,
         })
     }
 
@@ -76,6 +81,17 @@ impl DataPlaneService for DataPlaneServiceImpl {
         req: http::Request<Body>,
     ) -> Result<http::Response<Body>, DomainError> {
         let instance_uri = req.uri().to_string();
+
+        // Authorization check: require invoke permission
+        const PROXY_RESOURCE: ResourceType = ResourceType {
+            name: "gts.x.core.oagw.proxy.v1",
+            supported_properties: &[],
+        };
+
+        let request = AccessRequest::new().require_constraints(false);
+        self.policy_enforcer
+            .access_scope_with(&ctx, &PROXY_RESOURCE, "invoke", None, &request)
+            .await?;
 
         // Normalize and parse alias and path_suffix from URI.
         let (alias, path_suffix) = {

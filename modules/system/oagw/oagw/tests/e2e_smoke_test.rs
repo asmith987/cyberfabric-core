@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use oagw::test_support::{
-    APIKEY_AUTH_PLUGIN_ID, AppHarness, MockBody, MockGuard, MockResponse, parse_resource_gts,
+    APIKEY_AUTH_PLUGIN_ID, AppHarness, DenyingAuthZResolverClient, MockBody, MockGuard,
+    MockResponse, parse_resource_gts,
 };
 
 // 10.1: E2E — create upstream, create route, proxy chat completion, verify round-trip.
@@ -612,4 +615,65 @@ async fn e2e_upstream_timeout_returns_504() {
         .await;
 
     resp.assert_header("x-oagw-error-source", "gateway");
+}
+
+// 10.11: E2E — proxy request denied by AuthZ returns 403 Forbidden.
+#[tokio::test]
+async fn e2e_authz_forbidden_returns_403() {
+    let h = AppHarness::builder()
+        .with_authz_client(Arc::new(DenyingAuthZResolverClient))
+        .build()
+        .await;
+
+    // Create upstream and route so the denial is purely from AuthZ, not routing.
+    let resp = h
+        .api_v1()
+        .post_upstream()
+        .with_body(serde_json::json!({
+            "server": {
+                "endpoints": [{"host": "127.0.0.1", "port": h.mock_port(), "scheme": "http"}]
+            },
+            "protocol": "gts.x.core.oagw.protocol.v1~x.core.oagw.http.v1",
+            "alias": "e2e-forbidden",
+            "enabled": true,
+            "tags": []
+        }))
+        .expect_status(201)
+        .await;
+    let upstream_id = resp.json()["id"].as_str().unwrap().to_string();
+
+    let (_, upstream_uuid) = parse_resource_gts(&upstream_id).unwrap();
+    h.api_v1()
+        .post_route()
+        .with_body(serde_json::json!({
+            "upstream_id": upstream_uuid,
+            "match": {
+                "http": {
+                    "methods": ["GET"],
+                    "path": "/v1/models"
+                }
+            },
+            "enabled": true,
+            "tags": [],
+            "priority": 0
+        }))
+        .expect_status(201)
+        .await;
+
+    // Proxy request should be denied before reaching the upstream.
+    let resp = h
+        .api_v1()
+        .proxy_get("e2e-forbidden", "v1/models")
+        .expect_status(403)
+        .await;
+
+    resp.assert_header("x-oagw-error-source", "gateway");
+
+    let body = resp.json();
+    assert_eq!(body["status"], 403);
+    assert_eq!(body["title"], "Forbidden");
+    assert_eq!(
+        body["type"],
+        "gts.x.core.errors.err.v1~x.oagw.authz.forbidden.v1"
+    );
 }
