@@ -1,6 +1,6 @@
 //! Test utilities for CP and DP integration tests.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::domain::credential::CredentialResolver;
@@ -45,6 +45,56 @@ impl AuthZResolverClient for DenyingAuthZResolverClient {
     ) -> Result<EvaluationResponse, AuthZResolverError> {
         Ok(EvaluationResponse {
             decision: false,
+            context: EvaluationResponseContext {
+                constraints: Vec::new(),
+                deny_reason: None,
+            },
+        })
+    }
+}
+
+/// Records all evaluation requests for post-hoc inspection.
+/// Configurable decision (default: allow).
+pub struct CapturingAuthZResolverClient {
+    pub requests: Arc<Mutex<Vec<EvaluationRequest>>>,
+    decision: bool,
+}
+
+impl CapturingAuthZResolverClient {
+    pub fn new() -> Self {
+        Self {
+            requests: Arc::new(Mutex::new(vec![])),
+            decision: true,
+        }
+    }
+
+    pub fn denying() -> Self {
+        Self {
+            decision: false,
+            ..Self::new()
+        }
+    }
+
+    pub fn recorded(&self) -> Vec<EvaluationRequest> {
+        self.requests.lock().unwrap().clone()
+    }
+}
+
+impl Default for CapturingAuthZResolverClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl AuthZResolverClient for CapturingAuthZResolverClient {
+    async fn evaluate(
+        &self,
+        request: EvaluationRequest,
+    ) -> Result<EvaluationResponse, AuthZResolverError> {
+        self.requests.lock().unwrap().push(request);
+        Ok(EvaluationResponse {
+            decision: self.decision,
             context: EvaluationResponseContext {
                 constraints: Vec::new(),
                 deny_reason: None,

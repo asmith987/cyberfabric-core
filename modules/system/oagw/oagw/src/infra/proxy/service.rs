@@ -89,7 +89,9 @@ impl DataPlaneService for DataPlaneServiceImpl {
                 &resources::PROXY,
                 actions::INVOKE,
                 None,
-                &AccessRequest::new().require_constraints(false),
+                &AccessRequest::new()
+                    .require_constraints(false)
+                    .context_tenant_id(ctx.subject_tenant_id()),
             )
             .await?;
 
