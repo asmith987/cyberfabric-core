@@ -8,10 +8,11 @@ pub(crate) use service::DataPlaneServiceImpl;
 
 pub(crate) mod resources {
     use super::ResourceType;
+    use modkit_security::pep_properties;
 
     pub const PROXY: ResourceType = ResourceType {
         name: "gts.x.core.oagw.proxy.v1~",
-        supported_properties: &[],
+        supported_properties: &[pep_properties::OWNER_TENANT_ID],
     };
 }
 
