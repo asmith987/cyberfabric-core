@@ -1,7 +1,7 @@
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use crate::config::OagwConfig;
+use crate::config::{OagwConfig, TokenCacheConfig};
 use crate::domain::type_catalog::oagw_gts_entities;
 use crate::domain::type_provisioning::TypeProvisioningService;
 use crate::infra::type_provisioning::TypeProvisioningServiceImpl;
@@ -89,11 +89,24 @@ impl Module for OutboundApiGatewayModule {
         let backend_selector: Arc<dyn EndpointSelector> =
             Arc::new(crate::infra::proxy::pingora_proxy::PingoraEndpointSelector::new());
 
+        let token_http_config = if cfg.allow_http_upstream {
+            tracing::warn!("allow_http_upstream is enabled — HTTP token endpoints also allowed");
+            let mut config = modkit_http::HttpClientConfig::token_endpoint();
+            config.transport = modkit_http::TransportSecurity::AllowInsecureHttp;
+            Some(config)
+        } else {
+            None
+        };
+
+        let token_cache_config = TokenCacheConfig::from(&cfg);
+
         let dp: Arc<dyn DataPlaneService> = Arc::new(
             DataPlaneServiceImpl::new(
                 cp.clone(),
                 credstore,
                 policy_enforcer,
+                token_http_config,
+                token_cache_config,
                 backend_selector.clone(),
                 proxy,
             )

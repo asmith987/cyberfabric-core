@@ -17,6 +17,7 @@ use modkit_security::SecurityContext;
 use oagw_sdk::api::ServiceGatewayClientV1;
 use uuid::Uuid;
 
+use crate::config::TokenCacheConfig;
 use crate::domain::services::{
     ControlPlaneService, ControlPlaneServiceImpl, DataPlaneService, EndpointSelector,
     ServiceGatewayClientV1Facade,
@@ -183,7 +184,10 @@ impl CredStoreClientV1 for FailingCredStoreClient {
 pub use MockCredStoreClient as TestCredStoreClient;
 
 /// Re-export plugin ID constants for test configurations.
-pub use crate::domain::gts_helpers::APIKEY_AUTH_PLUGIN_ID;
+pub use crate::domain::gts_helpers::{
+    APIKEY_AUTH_PLUGIN_ID, OAUTH2_CLIENT_CRED_AUTH_PLUGIN_ID,
+    OAUTH2_CLIENT_CRED_BASIC_AUTH_PLUGIN_ID,
+};
 
 /// Builder for a fully-wired Control Plane test environment.
 pub struct TestCpBuilder {
@@ -237,6 +241,8 @@ pub struct TestDpBuilder {
     backend_selector: Option<Arc<dyn EndpointSelector>>,
     max_body_size: Option<usize>,
     skip_upstream_tls_verify: bool,
+    token_http_config: Option<modkit_http::HttpClientConfig>,
+    token_cache_config: TokenCacheConfig,
 }
 
 impl TestDpBuilder {
@@ -248,6 +254,8 @@ impl TestDpBuilder {
             backend_selector: None,
             max_body_size: None,
             skip_upstream_tls_verify: false,
+            token_http_config: None,
+            token_cache_config: TokenCacheConfig::default(),
         }
     }
 
@@ -287,6 +295,21 @@ impl TestDpBuilder {
         self
     }
 
+    /// Override the HTTP client config for OAuth2 token endpoints.
+    /// Pass `HttpClientConfig::for_testing()` to allow plain HTTP in tests.
+    #[must_use]
+    pub fn with_token_http_config(mut self, config: modkit_http::HttpClientConfig) -> Self {
+        self.token_http_config = Some(config);
+        self
+    }
+
+    /// Override the token cache configuration.
+    #[must_use]
+    pub fn with_token_cache_config(mut self, config: TokenCacheConfig) -> Self {
+        self.token_cache_config = config;
+        self
+    }
+
     /// Fetch `CredStoreClientV1` from the hub, create a DP service with
     /// the given CP, and return the trait object.
     pub(crate) fn build_and_register(
@@ -319,9 +342,16 @@ impl TestDpBuilder {
                 Arc::new(crate::infra::proxy::pingora_proxy::PingoraEndpointSelector::new())
             });
 
-        let mut svc =
-            DataPlaneServiceImpl::new(cp, credstore, policy_enforcer, backend_selector, proxy)
-                .with_allow_http_upstream(true);
+        let mut svc = DataPlaneServiceImpl::new(
+            cp,
+            credstore,
+            policy_enforcer,
+            self.token_http_config,
+            self.token_cache_config,
+            backend_selector,
+            proxy,
+        )
+        .with_allow_http_upstream(true);
         if let Some(timeout) = self.request_timeout {
             svc = svc.with_request_timeout(timeout);
         }
