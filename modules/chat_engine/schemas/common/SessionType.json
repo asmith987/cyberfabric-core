@@ -27,10 +27,10 @@
       "description": "Plugin-specific configuration forwarded verbatim to the plugin in every call context (session_type_meta field). Allows one plugin to serve multiple differently-configured session types (e.g., different model, prompt strategy, feature flags).",
       "additionalProperties": true
     },
-    "capabilities": {
+    "available_capabilities": {
       "type": "array",
       "items": { "$ref": "./Capability.json" },
-      "description": "Declared (advertised) capabilities for UI display and session type discovery. This is the maximum set the plugin can provide. The actual capabilities available to a specific session are determined by the plugin during `on_session_created` and stored in `Session.available_capabilities`. The plugin may return a subset based on `SessionType.meta` configuration."
+      "description": "Declared (advertised) capabilities for UI display and session type discovery. This is the maximum set the plugin can provide. The actual capabilities enabled for a specific session are determined by the plugin during `on_session_created` and stored in `Session.enabled_capabilities`. The plugin may return a subset based on `SessionType.meta` configuration."
     },
     "retention_policy": {
       "oneOf": [
@@ -40,6 +40,6 @@
       "description": "Data retention and lifecycle policy for sessions of this type"
     }
   },
-  "required": ["session_type_id", "name", "plugin_instance_id", "capabilities"],
+  "required": ["session_type_id", "name", "plugin_instance_id", "available_capabilities"],
   "additionalProperties": false
 }

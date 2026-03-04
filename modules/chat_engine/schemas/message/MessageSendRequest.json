@@ -42,11 +42,8 @@
     },
     "enabled_capabilities": {
       "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1
-      },
-      "description": "List of capability IDs to enable for this message"
+      "items": { "$ref": "../common/CapabilityValue.json" },
+      "description": "Capability values to apply for this message"
     }
   },
   "required": ["session_id", "content"],

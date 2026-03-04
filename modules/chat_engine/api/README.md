@@ -198,7 +198,7 @@ const response = await fetch('https://chat-engine/api/v1/sessions', {
     session_type_id: 'gts.cyberfabric.chat_engine.session_types.ai_assistant.v1~'
   })
 });
-const { session_id, available_capabilities } = await response.json();
+const { session_id, enabled_capabilities } = await response.json();
 
 // Get session
 const session = await fetch(`https://chat-engine/api/v1/sessions/${session_id}`, {
@@ -246,7 +246,7 @@ async function sendMessage(sessionId: string, content: string) {
     body: JSON.stringify({
       session_id: sessionId,
       content: content,
-      enabled_capabilities: ['web_search']
+      enabled_capabilities: [{ id: 'web_search', value: true }]
     })
   });
 
@@ -545,7 +545,7 @@ For clients migrating from WebSocket to HTTP streaming:
    {"type":"start","message_id":"gts.cyberfabric.chat_engine.entities.message.v1~987fcdeb-51a2-43c1-b789-012345678abc"}
    {"type":"chunk","message_id":"gts.cyberfabric.chat_engine.entities.message.v1~987fcdeb-51a2-43c1-b789-012345678abc","chunk":{"type":"text","content":"Hi"}}
    {"type":"chunk","message_id":"gts.cyberfabric.chat_engine.entities.message.v1~987fcdeb-51a2-43c1-b789-012345678abc","chunk":{"type":"text","content":" there"}}
-   {"type":"complete","message_id":"gts.cyberfabric.chat_engine.entities.message.v1~987fcdeb-51a2-43c1-b789-012345678abc","metadata":{"usage":{"input_tokens":10,"output_tokens":5}}}
+   {"type":"complete","message_id":"gts.cyberfabric.chat_engine.entities.message.v1~987fcdeb-51a2-43c1-b789-012345678abc","metadata":{"usage":{"input_units":10,"output_units":5}}}
    ```
 
 4. **HTTP**: Retrieve message history

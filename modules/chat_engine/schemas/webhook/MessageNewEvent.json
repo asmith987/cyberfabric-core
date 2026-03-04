@@ -23,8 +23,8 @@
     },
     "enabled_capabilities": {
       "type": "array",
-      "items": { "$ref": "../common/Capability.json" },
-      "description": "Capabilities enabled for this message"
+      "items": { "$ref": "../common/CapabilityValue.json" },
+      "description": "Capability values active for this message"
     },
     "message": {
       "type": "object",

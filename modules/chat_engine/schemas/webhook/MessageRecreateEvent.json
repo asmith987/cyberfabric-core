@@ -18,8 +18,8 @@
     },
     "enabled_capabilities": {
       "type": "array",
-      "items": { "$ref": "../common/Capability.json" },
-      "description": "Capabilities enabled for recreation"
+      "items": { "$ref": "../common/CapabilityValue.json" },
+      "description": "Capability values active for this recreation"
     },
     "history": {
       "type": "array",

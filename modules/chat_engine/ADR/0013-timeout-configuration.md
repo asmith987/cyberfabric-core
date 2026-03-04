@@ -8,11 +8,11 @@
 
 ## Context and Problem Statement
 
-Different webhook backends have different processing times (fast rule-based vs slow LLM with web search). How should Chat Engine configure request timeouts to balance responsiveness with backend processing needs?
+Different webhook backends have different processing times (fast rule-based vs slow backends with complex processing). How should Chat Engine configure request timeouts to balance responsiveness with backend processing needs?
 
 ## Decision Drivers
 
-* Different backends need different timeouts (GPT-4: 30s, simple rules: 5s, web search: 60s)
+* Different backends need different timeouts (complex-backend: 30s, simple rules: 5s, web search: 60s)
 * Prevent indefinite hangs from slow/broken backends
 * Enable backend-specific tuning without code changes
 * Default timeout for new backends (30s)
@@ -33,7 +33,7 @@ Chosen option: "Per-session-type timeout in database", because it enables backen
 
 ### Consequences
 
-* Good, because backends configured independently (fast timeout for rules, slow for LLM+search)
+* Good, because backends configured independently (fast timeout for rules, slow for complex+search)
 * Good, because timeout tuning without code deployment (database update)
 * Good, because reasonable default (30s) for new backends
 * Good, because maximum enforced (300s prevents indefinite hang)

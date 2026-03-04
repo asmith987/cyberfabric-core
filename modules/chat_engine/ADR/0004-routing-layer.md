@@ -14,7 +14,7 @@ Chat Engine sits between clients and webhook backends as a proxy service. Should
 
 * Enable rapid backend experimentation without infrastructure changes
 * Keep Chat Engine focused on infrastructure concerns (routing, persistence, scaling)
-* Avoid coupling Chat Engine to specific AI models or processing logic
+* Avoid coupling Chat Engine to specific backend implementations or processing logic
 * Support diverse backend types (LLMs, rule-based, human-in-the-loop)
 * Simplify Chat Engine codebase and reduce maintenance burden
 * Enable backends to evolve independently

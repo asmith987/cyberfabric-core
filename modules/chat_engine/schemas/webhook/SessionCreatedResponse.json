@@ -5,12 +5,12 @@
   "description": "Webhook response for session.created event",
   "type": "object",
   "properties": {
-    "available_capabilities": {
+    "enabled_capabilities": {
       "type": "array",
       "items": { "$ref": "../common/Capability.json" },
       "description": "Capabilities this backend provides for the session"
     }
   },
-  "required": ["available_capabilities"],
+  "required": ["enabled_capabilities"],
   "additionalProperties": false
 }

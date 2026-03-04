@@ -1120,7 +1120,7 @@
           "session_id": {
             "$ref": "../schemas/common/GtsSessionId.json"
           },
-          "available_capabilities": {
+          "enabled_capabilities": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Capability"
@@ -1141,7 +1141,7 @@
           "session_type_id": {
             "$ref": "../schemas/common/GtsSessionTypeId.json"
           },
-          "available_capabilities": {
+          "enabled_capabilities": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Capability"
@@ -1742,10 +1742,10 @@
               "usage": {
                 "type": "object",
                 "properties": {
-                  "input_tokens": {
+                  "input_units": {
                     "type": "integer"
                   },
-                  "output_tokens": {
+                  "output_units": {
                     "type": "integer"
                   }
                 }

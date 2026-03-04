@@ -7,10 +7,8 @@
   "properties": {
     "enabled_capabilities": {
       "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "Capabilities to enable for this recreation"
+      "items": { "$ref": "../common/CapabilityValue.json" },
+      "description": "Capability values to apply for this recreation"
     }
   },
   "additionalProperties": false

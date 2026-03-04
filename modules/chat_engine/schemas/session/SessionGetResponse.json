@@ -25,7 +25,7 @@
       "$ref": "../common/GtsSessionTypeId.json",
       "description": "Current session type"
     },
-    "available_capabilities": {
+    "enabled_capabilities": {
       "type": "array",
       "items": { "$ref": "../common/Capability.json" },
       "description": "Available capabilities for this session"
@@ -59,6 +59,6 @@
       "description": "Conversation memory management strategy; null means default (full history)"
     }
   },
-  "required": ["session_id", "tenant_id", "user_id", "session_type_id", "available_capabilities", "lifecycle_state", "created_at", "updated_at"],
+  "required": ["session_id", "tenant_id", "user_id", "session_type_id", "enabled_capabilities", "lifecycle_state", "created_at", "updated_at"],
   "additionalProperties": false
 }

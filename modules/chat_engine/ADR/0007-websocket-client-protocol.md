@@ -116,7 +116,7 @@ All requests use JWT Bearer token authentication.
 
 **StreamingChunkEvent**: Contains type "chunk", message_id, and chunk object with content type, content text, and index.
 
-**StreamingCompleteEvent**: Signals end of streaming, contains type "complete", message_id, and metadata with usage statistics (input_tokens, output_tokens).
+**StreamingCompleteEvent**: Signals end of streaming, contains type "complete", message_id, and metadata with usage statistics (input_units, output_units).
 
 **StreamingErrorEvent**: Signals streaming error, contains type "error", message_id, and error object with error code and message.
 

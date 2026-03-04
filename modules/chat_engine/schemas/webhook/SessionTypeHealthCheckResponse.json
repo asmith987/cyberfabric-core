@@ -16,12 +16,12 @@
       "description": "Backend version",
       "examples": ["1.0.0"]
     },
-    "capabilities": {
+    "available_capabilities": {
       "type": "array",
       "items": { "$ref": "../common/Capability.json" },
-      "description": "Current capabilities available"
+      "description": "Capabilities currently available for this session type"
     }
   },
-  "required": ["status", "version", "capabilities"],
+  "required": ["status", "version", "available_capabilities"],
   "additionalProperties": false
 }

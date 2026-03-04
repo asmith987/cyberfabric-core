@@ -9,12 +9,12 @@
       "$ref": "../common/GtsSessionId.json",
       "description": "Newly created session identifier"
     },
-    "available_capabilities": {
+    "enabled_capabilities": {
       "type": "array",
       "items": { "$ref": "../common/Capability.json" },
       "description": "Capabilities available for this session"
     }
   },
-  "required": ["session_id", "available_capabilities"],
+  "required": ["session_id", "enabled_capabilities"],
   "additionalProperties": false
 }

@@ -25,10 +25,10 @@
       "$ref": "./GtsSessionTypeId.json",
       "description": "Current session type reference"
     },
-    "available_capabilities": {
+    "enabled_capabilities": {
       "type": "array",
       "items": { "$ref": "./Capability.json" },
-      "description": "Capabilities confirmed by the backend plugin on session creation (`on_session_created`). Chat Engine uses this list for feature gating (e.g., file upload, summarization). May be a subset of `SessionType.capabilities` depending on plugin logic and `SessionType.meta`."
+      "description": "Capabilities confirmed and enabled by the backend plugin on session creation (`on_session_created`). Chat Engine uses this list for feature gating (e.g., file upload, summarization). May be a subset of `SessionType.available_capabilities` depending on plugin logic and `SessionType.meta`."
     },
     "metadata": {
       "type": "object",
@@ -79,6 +79,6 @@
       "description": "Conversation memory management strategy; null means default (full history). Controlled by feature-context-management (p2)."
     }
   },
-  "required": ["session_id", "tenant_id", "user_id", "session_type_id", "available_capabilities", "lifecycle_state", "created_at", "updated_at"],
+  "required": ["session_id", "tenant_id", "user_id", "session_type_id", "enabled_capabilities", "lifecycle_state", "created_at", "updated_at"],
   "additionalProperties": false
 }

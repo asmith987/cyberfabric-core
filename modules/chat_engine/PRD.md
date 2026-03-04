@@ -6,9 +6,9 @@
 
 Chat Engine provides a unified interface for building conversational applications by abstracting session management, message history persistence, and flexible message processing. The system acts as an intermediary layer that handles the complexity of session state, message tree structures, and backend integration, allowing application developers to focus on building user experiences and backend plugin developers to focus on message processing logic.
 
-The core value proposition is enabling flexible, stateful conversation management with support for advanced features like message regeneration and conversation branching. By decoupling the conversation infrastructure from processing logic, Chat Engine enables rapid experimentation with different AI models, processing backends, and conversation patterns without requiring changes to client applications.
+The core value proposition is enabling flexible, stateful conversation management with support for advanced features like message regeneration and conversation branching. By decoupling the conversation infrastructure from processing logic, Chat Engine enables rapid experimentation with different backend implementations and conversation patterns without requiring changes to client applications.
 
-The system supports various conversation patterns including traditional linear chat and branching conversations with variant exploration. This flexibility enables use cases ranging from AI-powered assistants to human-in-the-loop support systems.
+The system supports various conversation patterns including traditional linear chat and branching conversations with variant exploration. This flexibility enables use cases ranging from automated assistants to human-in-the-loop support systems.
 
 **Target Users**:
 - **Application Developers** - Build chat applications using Chat Engine as backend infrastructure for session and message management
@@ -17,7 +17,7 @@ The system supports various conversation patterns including traditional linear c
 
 **Key Problems Solved**:
 - **Session Management Complexity**: Eliminates the need for each application to implement session lifecycle, message history persistence, and state management from scratch
-- **Message Routing Flexibility**: Decouples message processing logic from infrastructure, enabling easy switching between different backends (AI models, custom logic, human operators)
+- **Message Routing Flexibility**: Decouples message processing logic from infrastructure, enabling easy switching between different backend implementations (automated, custom logic, human operators)
 - **Conversation Variants**: Provides built-in support for message regeneration and branching conversations, enabling users to explore alternative responses without losing conversation history
 - **Multi-Backend Support**: Allows seamless switching between different message processing backends mid-conversation, enabling hybrid approaches like starting with AI and escalating to human support
 - **Plugin Extensibility**: Predefined domain model schemas (message types, content types, event types, error types) are designed as base schemas that plugin vendors can extend via GTS, enabling custom scenarios — custom content rendering, domain-specific events, vendor error taxonomies — without modifying Chat Engine core
@@ -46,15 +46,16 @@ The system supports various conversation patterns including traditional linear c
 | Term | Definition |
 |------|------------|
 | **Session** | A persistent conversation context with a unique ID, owned by a client and associated with a session type |
-| **Session Type** | A configuration profile that maps a session to a backend plugin and defines enabled capabilities (file attachments, summarization, WebSocket, etc.) |
+| **Session Type** | A configuration profile that maps a session to a backend plugin and declares available capabilities (the maximum set the plugin can provide) |
 | **Backend Plugin** | A CyberFabric ModKit plugin module implementing `ChatEngineBackendPlugin` trait; co-located in the same CyberFabric process and called directly via `ClientHub`. External HTTP backends are supported via the `chat-engine-webhook-adapter` plugin. See ADR-0026. |
 | **Message Tree** | A tree structure where each message references a parent message; sibling nodes with the same parent are variants |
 | **Message Variant** | An alternative response at the same position in the conversation tree — created by regeneration or branching |
-| **Capability** | A feature flag returned by the backend plugin at session creation time that enables optional Chat Engine functionality |
+| **Capability** | A typed feature declared by the backend plugin (`bool`, `enum`, `str`, `int`). `SessionType.available_capabilities` is the maximum set the plugin supports; `Session.enabled_capabilities` is the confirmed set for a specific session. Per-message settings are passed as `CapabilityValue` (id + value). |
+| **CapabilityValue** | A per-message capability setting: `{id, value}` where value matches the type declared in the corresponding `Capability` definition |
 | **Streaming Response** | Real-time forwarding of response chunks from the backend plugin to the client as they are generated |
 | **Lifecycle State** | One of four session states: `active`, `archived`, `soft_deleted`, `hard_deleted` |
 | **is_hidden_from_user** | Message visibility flag that excludes the message from client-facing APIs |
-| **is_hidden_from_llm** | Message visibility flag that excludes the message from the context sent to backend plugins |
+| **is_hidden_from_backend** | Message visibility flag that excludes the message from the context sent to backend plugins |
 
 ## 2. Actors
 
@@ -81,7 +82,7 @@ The system supports various conversation patterns including traditional linear c
 **ID**: `cpt-chat-engine-actor-backend-developer`
 
 <!-- fdd-id-content -->
-**Role**: Implements CyberFabric ModKit plugin modules that satisfy the `ChatEngineBackendPlugin` trait. Registers the plugin in `types-registry` and declares its capabilities. May call external AI APIs, RAG systems, or human-in-the-loop workflows internally. Optionally wraps an external HTTP endpoint using the `chat-engine-webhook-adapter` plugin.
+**Role**: Implements CyberFabric ModKit plugin modules that satisfy the `ChatEngineBackendPlugin` trait. Registers the plugin in `types-registry` and declares its capabilities. May call external processing services, retrieval systems, or human-in-the-loop workflows internally. Optionally wraps an external HTTP endpoint using the `chat-engine-webhook-adapter` plugin.
 <!-- fdd-id-content -->
 
 ### 2.2 System Actors
@@ -129,7 +130,7 @@ Plugin modules are co-located within the same CyberFabric server process and cal
 - [ ] `p1` - **ID**: `cpt-chat-engine-fr-create-session`
 
 <!-- fdd-id-content -->
-The system **MUST** create a new session with a specified session type and client ID. The system binds each session to the requesting user (`user_id`) and tenant (`tenant_id`), both extracted from the JWT bearer token — they are never accepted from the request body. The system notifies the backend plugin of the new session and receives available capabilities for that session type. The capabilities determine which features are enabled (file attachments, session switching, summarization, etc.).
+The system **MUST** create a new session with a specified session type and client ID. The system binds each session to the requesting user (`user_id`) and tenant (`tenant_id`), both extracted from the JWT bearer token — they are never accepted from the request body. The system notifies the backend plugin of the new session and receives `enabled_capabilities` confirmed by the plugin for this session. The enabled capabilities determine which features are active (file attachments, session switching, summarization, etc.).
 
 **Actors**: `cpt-chat-engine-actor-client`, `cpt-chat-engine-actor-backend-plugin`
 <!-- fdd-id-content -->
@@ -254,36 +255,36 @@ The system **SHOULD** support session summarization if enabled by session type c
 - [ ] `p2` - **ID**: `cpt-chat-engine-fr-conversation-memory`
 
 <!-- fdd-id-content -->
-The system **SHOULD** provide guidance and capabilities to support conversation memory management strategies for handling long-running sessions that exceed LLM context window limits. Webhook backends can implement various strategies to optimize token usage while preserving conversation context.
+The system **SHOULD** provide guidance and capabilities to support conversation memory management strategies for handling long-running sessions that exceed backend processing capacity limits. Backend plugins can implement various strategies to manage context depth while preserving conversation quality.
 
 **Memory Management Strategies**:
 1. **Full History** (default) - Send complete message history (suitable for short conversations)
-2. **Sliding Window** - Keep last N messages or T tokens (predictable token usage)
+2. **Sliding Window** - Keep last N messages (predictable context depth)
 3. **Summarization + Recent** - Summarize old messages, keep recent ones verbatim
 4. **Importance Filtering** - Keep semantically important messages, filter filler
 5. **Hierarchical Summarization** - Multi-level summaries for very long conversations
-6. **Visibility Flags** - Use `is_hidden_from_llm` to exclude messages from context
+6. **Visibility Flags** - Use `is_hidden_from_backend` to exclude messages from context
 
 **System Capabilities Supporting Strategies**:
-- Session Summary (FR-011) - Webhook can request conversation summaries
-- Message Visibility Flags - Mark messages as `is_hidden_from_llm=true` to exclude from context
+- Session Summary (FR-011) - Backend can request conversation summaries
+- Message Visibility Flags - Mark messages as `is_hidden_from_backend=true` to exclude from context
 - Branching (FR-006) - Create new conversation path with truncated history
 - Message Tree Navigation - Backends can traverse history to implement custom strategies
 - Session Metadata - Store strategy configuration and state (e.g., last summarization point)
 
 **Backend Responsibilities**:
 - Choose appropriate strategy based on session type and conversation length
-- Implement token counting and context window management
+- Implement context depth management and history filtering logic
 - Handle summarization or filtering logic
 - Store strategy state in session metadata if needed
-- Monitor token usage and adjust strategy dynamically
+- Monitor context depth and adjust strategy dynamically
 
 **Strategy Selection Guidelines**:
 - **<50 messages**: Full History (default)
 - **50-200 messages**: Sliding Window or Visibility Flags
 - **200-1000 messages**: Summarization + Recent Messages
 - **1000+ messages**: Hierarchical Summarization or Importance Filtering
-- **Context window limits**: Adjust strategy based on model (8K, 32K, 128K tokens)
+- **Backend context limits**: Adjust strategy based on backend processing capacity
 
 **Trade-offs**:
 - **Full History**: High fidelity but expensive for long conversations
@@ -326,7 +327,7 @@ The system **MUST** support deletion of individual messages within a session. Wh
 - [ ] `p2` - **ID**: `cpt-chat-engine-fr-message-feedback`
 
 <!-- fdd-id-content -->
-The system **SHOULD** support per-message feedback in the form of like/dislike reactions and optional text comments. Feedback enables quality monitoring, model evaluation, and user satisfaction tracking. Each message can have at most one reaction per user, with reaction changes (like → dislike) replacing the previous reaction. The system stores feedback metadata and optionally forwards it to backend plugins for analytics.
+The system **SHOULD** support per-message feedback in the form of like/dislike reactions and optional text comments. Feedback enables quality monitoring, response quality evaluation, and user satisfaction tracking. Each message can have at most one reaction per user, with reaction changes (like → dislike) replacing the previous reaction. The system stores feedback metadata and optionally forwards it to backend plugins for analytics.
 
 **Reaction Types**:
 - **like**: Positive feedback (thumbs up)
@@ -342,7 +343,7 @@ The system **SHOULD** support per-message feedback in the form of like/dislike r
 **Webhook Integration**:
 - Backends receive `message_feedback` events when reactions are added/changed
 - Events include message_id, reaction_type, comment, user_id, timestamp
-- Backends can use feedback for model fine-tuning, quality metrics, A/B testing
+- Backends can use feedback for backend optimization, quality metrics, A/B testing
 
 **Privacy & Data Handling**:
 - Feedback is tied to authenticated user (not anonymous)
@@ -359,18 +360,18 @@ The system **SHOULD** support per-message feedback in the form of like/dislike r
 - [ ] `p2` - **ID**: `cpt-chat-engine-fr-context-overflow`
 
 <!-- fdd-id-content -->
-The system **SHOULD** provide explicit support for handling context window overflow when message history exceeds LLM token limits. Chat Engine provides primitives and metadata to enable backend plugins to implement various overflow strategies. The system does not enforce a specific strategy but provides the mechanisms for backends to implement their chosen approach.
+The system **SHOULD** provide explicit support for handling context overflow when message history exceeds backend processing capacity. Chat Engine provides primitives and metadata to enable backend plugins to implement various overflow strategies. The system does not enforce a specific strategy but provides the mechanisms for backends to implement their chosen approach.
 
 **Supported Strategy Primitives**:
 
 1. **Sliding Window**: Keep only the most recent N messages to bound context size
-2. **Hard Stop**: Reject new messages when the session exceeds a configured token threshold
+2. **Hard Stop**: Reject new messages when the session exceeds a configured message count threshold
 3. **Drop-Middle**: Retain the beginning and end of the conversation, dropping the middle portion
 4. **Summarization**: Use `cpt-chat-engine-fr-session-summary` to compress older messages into a summary that is included instead of verbatim history
-5. **Message Visibility Flags**: Mark individual messages with `is_hidden_from_llm` to exclude them from context sent to backends
+5. **Message Visibility Flags**: Mark individual messages with `is_hidden_from_backend` to exclude them from context sent to backends
 
 **System Support**:
-- Session metadata exposes estimated message count and token usage for backend decision-making
+- Session metadata exposes estimated message count and processing metrics for backend decision-making
 - Session metadata stores strategy configuration and state between messages
 - Message tree navigation supports arbitrary history traversal by backends
 - `cpt-chat-engine-fr-session-summary` provides summarization capability
@@ -610,11 +611,11 @@ The system **SHOULD** provide extensible, versioned base schemas for all core do
 1. Client requests session creation with session type ID and client ID
 2. System creates session record in database with unique session ID
 3. System notifies backend plugin of session creation with session metadata
-4. Backend processes creation notification and returns available capabilities (file attachments, session switching, summarization, etc.)
-5. System stores capabilities in session record and returns session ID to client
-6. Client sends first message with capabilities indicating which features are enabled
-7. System validates capabilities against stored session capabilities
-8. System forwards message to backend with full context (session metadata, capabilities, empty message history)
+4. Backend processes creation notification and returns `enabled_capabilities` — typed `Capability` definitions (bool/enum/str/int with default values) confirmed for this session
+5. System stores `enabled_capabilities` in session record and returns session ID with capability list to client
+6. Client sends first message with `enabled_capabilities` — a list of `CapabilityValue` objects (`{id, value}`) specifying per-message capability settings
+7. System validates capability IDs in request against session's `enabled_capabilities`
+8. System forwards message to backend with full context (session metadata, `CapabilityValue` list, empty message history)
 9. Backend processes message and streams response
 10. System streams response chunks to client in real-time
 11. System stores complete message exchange in database
@@ -778,7 +779,7 @@ The system **SHOULD** provide extensible, versioned base schemas for all core do
 2. System validates session is active and client owns or has access to the session
 3. System validates file UUIDs against session capabilities (if file attachments enabled)
 4. System persists user message to database and assigns message ID
-5. System loads full message history for the session (respecting `is_hidden_from_llm` flags)
+5. System loads full message history for the session (respecting `is_hidden_from_backend` flags)
 6. System forwards message to backend plugin with: session metadata, capabilities, message history, new message content
 7. Backend begins processing and streams response chunks
 8. System forwards each chunk to client in real-time
@@ -953,7 +954,7 @@ When WebSocket is enabled, connections must support automatic reconnection with 
 - [ ] `p2` - **ID**: `cpt-chat-engine-nfr-message-history`
 
 <!-- fdd-id-content -->
-System must support sessions with up to 10,000 messages without performance degradation. Message history forwarding to backend plugins must complete within 2 seconds at p95 for sessions with 1,000 messages. Backends must implement conversation memory management strategies when approaching context window limits (typically 4,000-100,000 tokens depending on LLM model). System must provide message count and estimated token count in session metadata to help backends make memory management decisions.
+System must support sessions with up to 10,000 messages without performance degradation. Message history forwarding to backend plugins must complete within 2 seconds at p95 for sessions with 1,000 messages. Backends must implement conversation memory management strategies when approaching their processing capacity limits. System must provide message count and estimated processing metrics in session metadata to help backends make memory management decisions.
 <!-- fdd-id-content -->
 
 #### NFR-014: Lifecycle Operation Performance
@@ -1008,7 +1009,7 @@ Chat Engine's primary users are Application Developers and Backend Plugin Develo
 **ID**: `cpt-chat-engine-prd-context-webhook-integration`
 
 <!-- fdd-id-content -->
-Webhook backends are expected to be HTTP services that receive session context (session metadata, capabilities, message history) and return responses. Backends are responsible for all message processing logic, enabling flexible implementations including AI chat (LLMs), rule-based systems, human-in-the-loop support, or hybrid approaches. The webhook contract is designed to be backend-agnostic, allowing easy experimentation with different processing approaches.
+Backend plugins receive session context (session metadata, capabilities, message history) and return responses. Backends are responsible for all message processing logic, enabling flexible implementations including automated chat (e.g. LLMs), rule-based systems, human-in-the-loop support, or hybrid approaches. The backend contract is designed to be implementation-agnostic, allowing easy experimentation with different processing approaches.
 <!-- fdd-id-content -->
 
 #### Message Tree Structure
@@ -1024,17 +1025,17 @@ Messages form a tree structure where each message (except the root) references a
 **ID**: `cpt-chat-engine-prd-context-message-visibility`
 
 <!-- fdd-id-content -->
-Messages can be selectively hidden from users or LLMs using visibility flags:
+Messages can be selectively hidden from users or backend plugins using visibility flags:
 
 - **`is_hidden_from_user`** (boolean): When true, the message is excluded from client-facing APIs and UI rendering. The message remains in the database and message tree but is not returned to clients. Use cases include system prompts, backend configuration messages, and internal tracking notes.
 
-- **`is_hidden_from_llm`** (boolean): When true, the message is excluded from the context history sent to backend plugins during message processing. The message is still visible to users (unless also hidden via `is_hidden_from_user`) but does not influence LLM responses. Use cases include user feedback, debug messages, and messages that should not affect conversation context.
+- **`is_hidden_from_backend`** (boolean): When true, the message is excluded from the context history sent to backend plugins during message processing. The message is still visible to users (unless also hidden via `is_hidden_from_user`) but does not affect backend processing. Use cases include user feedback, debug messages, and messages that should not affect conversation context.
 
 These flags enable flexible message handling patterns:
-- **System prompts**: `is_hidden_from_user=true, is_hidden_from_llm=false` - Configure LLM behavior without showing configuration to users
-- **Internal notes**: `is_hidden_from_user=true, is_hidden_from_llm=true` - Store metadata or debug information without affecting UI or LLM
-- **User feedback**: `is_hidden_from_user=false, is_hidden_from_llm=true` - Show user messages in UI but exclude from LLM context (e.g., rating messages)
-- **Normal messages**: `is_hidden_from_user=false, is_hidden_from_llm=false` - Standard visible messages that are part of conversation flow
+- **System prompts**: `is_hidden_from_user=true, is_hidden_from_backend=false` - Configure backend behaviour without showing configuration to users
+- **Internal notes**: `is_hidden_from_user=true, is_hidden_from_backend=true` - Store metadata or debug information without affecting UI or backend
+- **User feedback**: `is_hidden_from_user=false, is_hidden_from_backend=true` - Show user messages in UI but exclude from backend context (e.g., rating messages)
+- **Normal messages**: `is_hidden_from_user=false, is_hidden_from_backend=false` - Standard visible messages that are part of conversation flow
 <!-- fdd-id-content -->
 
 #### Conversation Memory Management
@@ -1042,18 +1043,18 @@ These flags enable flexible message handling patterns:
 **ID**: `cpt-chat-engine-prd-context-memory-management`
 
 <!-- fdd-id-content -->
-Chat Engine forwards complete message history to backend plugins by default, enabling backends to implement their own memory management strategies. For long conversations that exceed LLM context window limits, backends should implement strategies such as sliding windows, summarization, or importance filtering.
+Chat Engine forwards complete message history to backend plugins by default, enabling backends to implement their own memory management strategies. For long conversations that exceed backend processing capacity, backends should implement strategies such as sliding windows, summarization, or importance filtering.
 
 The system provides building blocks for memory management:
 - **Session Summary (FR-011)**: Request conversation summaries at any point
-- **Message Visibility Flags**: Mark messages to exclude from LLM context
+- **Message Visibility Flags**: Mark messages to exclude from backend context
 - **Branching (FR-006)**: Create new conversation paths with truncated history
 - **Session Metadata**: Store strategy state and configuration
 
 Backends are responsible for:
-- Monitoring conversation length and token usage
+- Monitoring conversation length and processing metrics
 - Choosing appropriate strategy for session type
-- Implementing token counting and context optimization
+- Implementing context depth management and history filtering
 - Storing strategy state in session metadata
 
 Common strategies include sending only recent messages (sliding window), summarizing older messages while keeping recent ones verbatim, or filtering messages by semantic importance.

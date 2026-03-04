@@ -6,7 +6,7 @@
 
 Chat Engine is designed as a **CyberFabric ModKit Gateway module** that decouples conversational infrastructure from message processing logic. The system follows a **hub-and-spoke architecture** where Chat Engine acts as the central hub managing session state, message history, and routing, while Backend Plugin modules serve as spokes implementing custom message processing logic.
 
-The architecture emphasizes **separation of concerns**: Chat Engine handles persistence, routing, and message tree management, while backend plugins focus solely on message processing. This enables flexible experimentation with different AI models, processing strategies, and conversation patterns without requiring changes to client applications or infrastructure.
+The architecture emphasizes **separation of concerns**: Chat Engine handles persistence, routing, and message tree management, while backend plugins focus solely on message processing. This enables flexible experimentation with different backend implementations, processing strategies, and conversation patterns without requiring changes to client applications or infrastructure.
 
 **Key architectural decisions:**
 - **Message Tree Structure**: Messages form an immutable tree structure enabling conversation branching and variant preservation
@@ -23,7 +23,7 @@ The system supports both **linear conversations** (traditional chat) and **non-l
 
 | FDD ID | Solution Description |
 |--------|----------------------|
-| `cpt-chat-engine-fr-create-session` | RESTful API endpoint creates session record, invokes backend plugin with `session.created` event, stores returned capabilities |
+| `cpt-chat-engine-fr-create-session` | RESTful API endpoint creates session record, invokes backend plugin with `session.created` event, stores returned `enabled_capabilities` (typed `Capability[]`) |
 | `cpt-chat-engine-fr-send-message` | HTTP streaming endpoint forwards message to backend plugin, pipes streamed response back to client, persists complete exchange after streaming |
 | `cpt-chat-engine-fr-attach-files` | Messages support file URL array field; client uploads to external storage first, includes URLs in message payload |
 | `cpt-chat-engine-fr-switch-session-type` | Session stores current session_type_id; switching updates this field and routes next message to new backend plugin |
@@ -37,10 +37,10 @@ The system supports both **linear conversations** (traditional chat) and **non-l
 | `cpt-chat-engine-fr-search-session` | Full-text search on messages table filtered by session_id; returns matches with context window |
 | `cpt-chat-engine-fr-search-sessions` | Full-text search across messages joined with sessions; ranks by relevance, returns session metadata |
 | `cpt-chat-engine-fr-delete-session` | Sends `session.deleted` event to backend plugin, then soft-deletes session and messages in database |
-| `cpt-chat-engine-fr-conversation-memory` | Message history forwarded to webhook with configurable depth; visibility flags (`is_hidden_from_llm`) enable token management strategies |
+| `cpt-chat-engine-fr-conversation-memory` | Message history forwarded to webhook with configurable depth; visibility flags (`is_hidden_from_backend`) enable context management strategies |
 | `cpt-chat-engine-fr-delete-message` | Hard delete individual messages with cascade reaction cleanup; ownership validation before deletion |
 | `cpt-chat-engine-fr-message-feedback` | UPSERT reaction per user per message; fire-and-forget webhook notification via `message.reaction` event |
-| `cpt-chat-engine-fr-context-overflow` | Session metadata exposes token usage; visibility flags and summary primitives enable overflow strategy implementation |
+| `cpt-chat-engine-fr-context-overflow` | Session metadata exposes processing metrics; visibility flags and summary primitives enable overflow strategy implementation |
 | `cpt-chat-engine-fr-message-retention` | Background cleanup job enforces per-session-type retention policies; tree-aware deletion preserves active path integrity |
 
 #### Non-functional Requirements
@@ -88,7 +88,7 @@ Once a message is created with a parent_message_id, that relationship is immutab
 <!-- fdd-id-content -->
 **ADRs**: ADR-0002, ADR-0026
 
-Backend plugins are authoritative for session capabilities and message processing logic. Chat Engine does not interpret or validate capability semantics — it only stores and forwards them. This allows backend plugins to evolve independently without Chat Engine changes. Plugin authors may internally delegate to external HTTP services (e.g., via `chat-engine-webhook-adapter`) without affecting Chat Engine.
+Backend plugins are authoritative for session capabilities and message processing logic. Chat Engine does not interpret or validate capability semantics — it only stores and forwards them. Capabilities are typed (`bool`, `enum`, `str`, `int`): `SessionType.available_capabilities` is the maximum set the plugin can provide; `Session.enabled_capabilities` is the subset confirmed for a specific session. Per-message capability settings are passed as `CapabilityValue[]` (id + value). This allows backend plugins to evolve independently without Chat Engine changes. Plugin authors may internally delegate to external HTTP services (e.g., via `chat-engine-webhook-adapter`) without affecting Chat Engine.
 <!-- fdd-id-content -->
 
 #### Principle: Stream Everything
@@ -156,9 +156,9 @@ All Chat Engine instances share a single database cluster. No local caching of s
 #### Session Operations (session/)
 
 - **SessionCreateRequest** - Create session (session_type_id, client_id)
-- **SessionCreateResponse** - Session created (session_id, available_capabilities)
+- **SessionCreateResponse** - Session created (session_id, enabled_capabilities)
 - **SessionGetRequest** - Get session (session_id)
-- **SessionGetResponse** - Session details (session_id, client_id, user_id, tenant_id, session_type_id, available_capabilities, metadata, created_at)
+- **SessionGetResponse** - Session details (session_id, client_id, user_id, tenant_id, session_type_id, enabled_capabilities, metadata, created_at)
 - **SessionDeleteRequest** - Delete session (session_id)
 - **SessionDeleteResponse** - Deletion confirmed (deleted)
 - **SessionSwitchTypeRequest** - Switch type (session_id, new_session_type_id)
@@ -198,7 +198,7 @@ All Chat Engine instances share a single database cluster. No local caching of s
 #### Webhook Protocol (webhook/)
 
 - **SessionCreatedEvent** - Session created notification (event, session_id, session_type_id, client_id, user_id, tenant_id, timestamp)
-- **SessionCreatedResponse** - Capabilities list (available_capabilities)
+- **SessionCreatedResponse** - Capabilities list (enabled_capabilities)
 - **MessageNewEvent** - New message for processing (event, session_id, message_id, session_metadata, enabled_capabilities, message, history, timestamp)
 - **MessageNewResponse** - Assistant response (message_id, role, content, metadata)
 - **MessageRecreateEvent** - Recreate request (event, session_id, message_id, enabled_capabilities, history, timestamp)
@@ -208,14 +208,15 @@ All Chat Engine instances share a single database cluster. No local caching of s
 - **SessionSummaryEvent** - Summary request (event, session_id, enabled_capabilities, history, summarization_settings, timestamp)
 - **SessionSummaryResponse** - Summary text (summary, metadata)
 - **SessionTypeHealthCheckEvent** - Health check (event, session_type_id, timestamp)
-- **SessionTypeHealthCheckResponse** - Health status (status, version, capabilities)
+- **SessionTypeHealthCheckResponse** - Health status (status, version, available_capabilities)
 
 #### Common Types (common/)
 
-- **Session** - Session entity (session_id, client_id, user_id, tenant_id, session_type_id, available_capabilities, metadata, created_at, updated_at, share_token)
+- **Session** - Session entity (session_id, client_id, user_id, tenant_id, session_type_id, enabled_capabilities, metadata, created_at, updated_at, share_token)
 - **Message** - Message entity (message_id, session_id, parent_message_id, role, content, file_ids, variant_index, is_active, is_complete, metadata, created_at)
 - **SessionType** - Session type config (session_type_id, name, plugin_instance_id, summarization_settings, meta, created_at, updated_at)
-- **Capability** - Capability definition (name, config, metadata)
+- **Capability** - Typed capability definition (id, name, type: `bool|enum|str|int`, default_value, enum_values when type=enum)
+- **CapabilityValue** - Per-message capability setting (id, value: boolean|string|integer)
 - **ContentPart** - Abstract content type (type, ...)
 - **TextContent** - Plain text content (type: "text", text)
 - **CodeContent** - Code block (type: "code", language, code)
@@ -223,7 +224,7 @@ All Chat Engine instances share a single database cluster. No local caching of s
 - **AudioContent** - Audio content (type: "audio", audio_id: uuid, mime_type)
 - **VideoContent** - Video content (type: "video", video_id: uuid, mime_type)
 - **DocumentContent** - Document content (type: "document", document_id: uuid, mime_type)
-- **Usage** - Token usage (input_tokens, output_tokens)
+- **Usage** - Backend processing metrics (input_units, output_units)
 - **VariantInfo** - Variant metadata (variant_index, total_variants, is_active)
 - **SearchResult** - Search match (message_id, content, context)
 - **SessionSearchResult** - Session match (session_id, metadata, matched_messages)
@@ -246,23 +247,24 @@ HTTP Protocol:
 - SessionCreateRequest → SessionType: references via session_type_id
 - MessageSendRequest → Session: references via session_id
 - MessageSendRequest → Message: optional parent via parent_message_id
-- MessageSendRequest → Capability: references via enabled_capabilities
+- MessageSendRequest → CapabilityValue: per-message capability settings via enabled_capabilities
 - MessageGetResponse → VariantInfo: includes variant metadata
 - SessionSearchResponse, SessionsSearchResponse → SearchResult/SessionSearchResult: contains results
 
 Webhook Protocol:
 - SessionCreatedEvent → Session: creates
-- SessionCreatedResponse → Capability: returns list
+- SessionCreatedResponse → Capability: returns enabled_capabilities list (typed Capability definitions)
 - MessageNewEvent, MessageRecreateEvent → Message: references
 - MessageNewEvent, MessageRecreateEvent → Session: context
-- MessageNewEvent, SessionSummaryEvent → Capability: filters via enabled_capabilities
+- MessageNewEvent, MessageRecreateEvent, SessionSummaryEvent → CapabilityValue: per-message capability settings via enabled_capabilities
 - MessageNewResponse, MessageRecreateResponse → ContentPart: contains array
 - MessageNewResponse, MessageRecreateResponse → Usage: includes metadata
 - SessionSummaryEvent → SummarizationSettings: includes config
 
 Common Types:
 - Session → SessionType: references via session_type_id
-- Session → Capability: contains available_capabilities array
+- Session → Capability: contains enabled_capabilities (typed Capability definitions confirmed for this session)
+- SessionType → Capability: contains available_capabilities (maximum set the plugin can provide)
 - Message → Session: belongs to via session_id
 - Message → Message: tree structure via parent_message_id
 - Message → Role: has role enum
@@ -331,7 +333,7 @@ Chat Engine orchestrates message creation, persistence, and tree management. It 
 
 Chat Engine's plugin invocation layer. Resolves `dyn ChatEngineBackendPlugin` from `ClientHub` by `plugin_instance_id`, constructs call context, and invokes plugin methods (`on_session_created`, `on_message`, `on_message_recreate`, `on_session_summary`). Auth, retry, circuit breaker, and timeouts are the plugin's responsibility; the `chat-engine-webhook-adapter` plugin provides these for external HTTP backends.
 
-**N:1 session type → plugin relationship**: Multiple differently-configured session types can share the same `plugin_instance_id`. The call context always includes `session_type_id` and `session_type_meta` (the `meta` JSON blob from the `session_types` table), allowing a single plugin instance to serve multiple session types with different behaviour (e.g., different model, different capability set, different prompting strategy).
+**N:1 session type → plugin relationship**: Multiple differently-configured session types can share the same `plugin_instance_id`. The call context always includes `session_type_id` and `session_type_meta` (the `meta` JSON blob from the `session_types` table), allowing a single plugin instance to serve multiple session types with different behaviour (e.g., different configuration, different capability set, different processing strategy).
 <!-- fdd-id-content -->
 
 #### Response Streaming
@@ -471,7 +473,7 @@ For complete endpoint definitions, request/response schemas, and examples, see t
 **Discovery**: Plugin instances registered in `types-registry` with GTS ID `gts.x.core.modkit.plugin.v1~x.chat_engine.backend.plugin.v1~{instance}`; resolved at runtime via `ClientHub::get_scoped`.
 
 **Plugin methods**:
-- `on_session_created(ctx)` → capabilities — called on session creation
+- `on_session_created(ctx)` → `Capability[]` (`enabled_capabilities`) — typed capability definitions confirmed for this session
 - `on_message(ctx, stream)` → streams response chunks
 - `on_message_recreate(ctx, stream)` → streams regenerated response
 - `on_session_summary(ctx, stream)` → streams session summary
@@ -970,7 +972,7 @@ sequenceDiagram
 | user_id | VARCHAR NOT NULL | Owning user identifier (from JWT `user_id` claim) |
 | client_id | VARCHAR | Calling application identifier (from JWT `client_id` claim) |
 | session_type_id | UUID FK | References session_types |
-| available_capabilities | JSONB | Capabilities returned by webhook at session creation |
+| enabled_capabilities | JSONB | Capabilities returned by webhook at session creation |
 | metadata | JSONB | Client-defined session metadata |
 | lifecycle_state | VARCHAR | `active` / `archived` / `soft_deleted` / `hard_deleted` |
 | share_token | VARCHAR UNIQUE NULL | Generated share token for session sharing |
@@ -993,7 +995,7 @@ sequenceDiagram
 | is_active | BOOL | Whether this is the active variant in the tree |
 | is_complete | BOOL | Whether streaming completed (false = partial/aborted) |
 | is_hidden_from_user | BOOL | Excluded from client-facing APIs |
-| is_hidden_from_llm | BOOL | Excluded from webhook context |
+| is_hidden_from_backend | BOOL | Excluded from webhook context |
 | metadata | JSONB | Backend-supplied message metadata |
 | created_at | TIMESTAMPTZ | Creation timestamp |
 
