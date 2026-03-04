@@ -529,14 +529,13 @@ impl AccessScope {
     ///
     /// Matches both `ScopeValue::Uuid` and `ScopeValue::String` variants so
     /// that UUID-as-string values are treated consistently with
-    /// [`AccessScope::uuid_values`], which also parses strings via
+    /// [`AccessScope::all_uuid_values_for`], which also parses strings via
     /// [`ScopeValue::as_uuid`].
     #[must_use]
     pub fn contains_uuid(&self, property: &str, id: Uuid) -> bool {
         self.constraints.iter().any(|c| {
             c.filters().iter().any(|f| {
-                f.property() == property
-                    && f.values().iter().any(|v| v.as_uuid() == Some(id))
+                f.property() == property && f.values().iter().any(|v| v.as_uuid() == Some(id))
             })
         })
     }
@@ -951,5 +950,24 @@ mod tests {
             scoped.contains_uuid(pep_properties::OWNER_TENANT_ID, tenant),
             "Tenant filter must be preserved"
         );
+    }
+
+    #[test]
+    fn contains_uuid_matches_string_variant() {
+        let scope = AccessScope::single(ScopeConstraint::new(vec![ScopeFilter::eq(
+            pep_properties::OWNER_TENANT_ID,
+            ScopeValue::String(T1.to_owned()),
+        )]));
+        assert!(scope.contains_uuid(pep_properties::OWNER_TENANT_ID, uid(T1)));
+        assert!(!scope.contains_uuid(pep_properties::OWNER_TENANT_ID, uid(T2)));
+    }
+
+    #[test]
+    fn contains_uuid_does_not_match_invalid_string() {
+        let scope = AccessScope::single(ScopeConstraint::new(vec![ScopeFilter::eq(
+            pep_properties::OWNER_TENANT_ID,
+            ScopeValue::String("not-a-uuid".to_owned()),
+        )]));
+        assert!(!scope.contains_uuid(pep_properties::OWNER_TENANT_ID, uid(T1)));
     }
 }
