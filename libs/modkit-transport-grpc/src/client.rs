@@ -5,8 +5,8 @@
 //! - HTTP/2 keepalive settings for connection health
 //! - Tracing spans around connection establishment
 //!
-//! **Note:** This module is responsible only for transport-level configuration.
-//! For RPC-level retry logic with exponential backoff and jitter, see the [`crate::rpc_retry`] module.
+//! **Note:** This module handles both transport-level configuration and connection retries
+//! ([`connect_with_retry`]). For RPC-level retry logic, see the [`crate::rpc_retry`] module.
 
 use std::time::Duration;
 
@@ -36,19 +36,20 @@ pub struct GrpcClientConfig {
     /// Timeout for individual RPC calls (applied at transport level).
     pub rpc_timeout: Duration,
 
-    /// Maximum number of retry attempts for RPC calls.
+    /// Maximum number of retry attempts.
     ///
-    /// Used by [`crate::rpc_retry::call_with_retry`], not by the transport layer.
+    /// Used by both [`connect_with_retry`] (connection retries) and
+    /// [`crate::rpc_retry::call_with_retry`] (RPC-call retries).
     pub max_retries: u32,
 
-    /// Base duration for exponential backoff between retries.
+    /// Initial backoff duration; doubled each attempt (`base * 2^(attempt-1)`).
     ///
-    /// Used by [`crate::rpc_retry::call_with_retry`], not by the transport layer.
+    /// Used by both [`connect_with_retry`] and [`crate::rpc_retry::call_with_retry`].
     pub base_backoff: Duration,
 
-    /// Maximum duration for exponential backoff.
+    /// Strict upper bound on backoff duration, enforced both before and after jitter.
     ///
-    /// Used by [`crate::rpc_retry::call_with_retry`], not by the transport layer.
+    /// Used by both [`connect_with_retry`] and [`crate::rpc_retry::call_with_retry`].
     pub max_backoff: Duration,
 
     /// Service name for metrics and tracing.
@@ -214,13 +215,32 @@ where
     .await
 }
 
+/// Compute exponential backoff with jitter, clamped to `max_backoff`.
+///
+/// Formula: `base * 2^(attempt-1)`, capped at `max_backoff`, then `jitter_factor * base` is
+/// added and the result is clamped to `max_backoff` again so that `max_backoff` is always a
+/// strict upper bound even after jitter.
+///
+/// The `jitter_factor` parameter (typically in `[0.0, 0.25]`) is passed in so the function
+/// is pure and can be tested deterministically without touching an RNG.
+fn compute_backoff(
+    base: Duration,
+    max_backoff: Duration,
+    attempt: u32,
+    jitter_factor: f64,
+) -> Duration {
+    let exp = i32::try_from(attempt.saturating_sub(1)).unwrap_or(i32::MAX);
+    let raw = base.mul_f64(2_f64.powi(exp)).min(max_backoff);
+    (raw + raw.mul_f64(jitter_factor)).min(max_backoff)
+}
+
 /// Connect to a gRPC service with retry logic using exponential backoff and jitter.
 ///
 /// This function attempts to establish a connection and retries on failure
 /// using the retry parameters from [`GrpcClientConfig`]:
 /// - `max_retries`: Maximum number of retry attempts
 /// - `base_backoff`: Initial backoff duration; doubled each attempt (`base * 2^(attempt-1)`)
-/// - `max_backoff`: Maximum backoff duration cap (applied before jitter)
+/// - `max_backoff`: Strict upper bound on backoff duration (enforced both before and after jitter)
 ///
 /// A random jitter of 0–25 % is added after capping to spread out concurrent retries.
 ///
@@ -267,12 +287,9 @@ where
                 return Ok(client);
             }
             Err(e) if attempt <= cfg.max_retries => {
-                let base = cfg
-                    .base_backoff
-                    .mul_f64(2_f64.powi((attempt - 1) as i32))
-                    .min(cfg.max_backoff);
                 let jitter_factor = rand::rng().random_range(0.0..=0.25);
-                let backoff = base + base.mul_f64(jitter_factor);
+                let backoff =
+                    compute_backoff(cfg.base_backoff, cfg.max_backoff, attempt, jitter_factor);
                 tracing::warn!(
                     service = cfg.service_name,
                     attempt,
@@ -365,5 +382,56 @@ mod tests {
         let cfg = GrpcClientConfig::default();
         let result = build_endpoint(String::new(), &cfg);
         assert!(result.is_err(), "build_endpoint should fail with empty URI");
+    }
+
+    #[test]
+    fn test_compute_backoff_first_attempt_no_jitter() {
+        let base = Duration::from_millis(100);
+        let max = Duration::from_secs(5);
+        // attempt=1: base * 2^0 = 100ms
+        assert_eq!(compute_backoff(base, max, 1, 0.0), Duration::from_millis(100));
+    }
+
+    #[test]
+    fn test_compute_backoff_exponential_growth() {
+        let base = Duration::from_millis(100);
+        let max = Duration::from_secs(5);
+        // attempt=2: 100ms * 2^1 = 200ms
+        assert_eq!(compute_backoff(base, max, 2, 0.0), Duration::from_millis(200));
+        // attempt=3: 100ms * 2^2 = 400ms
+        assert_eq!(compute_backoff(base, max, 3, 0.0), Duration::from_millis(400));
+    }
+
+    #[test]
+    fn test_compute_backoff_capped_at_max() {
+        let base = Duration::from_millis(100);
+        let max = Duration::from_millis(150);
+        // attempt=2 gives 200ms without cap; expect 150ms
+        assert_eq!(compute_backoff(base, max, 2, 0.0), Duration::from_millis(150));
+    }
+
+    #[test]
+    fn test_compute_backoff_jitter_does_not_exceed_max() {
+        let base = Duration::from_millis(100);
+        let max = Duration::from_millis(100);
+        // With max jitter (25%), raw = 100ms; 100ms + 25ms would be 125ms but must be capped
+        assert_eq!(compute_backoff(base, max, 1, 0.25), Duration::from_millis(100));
+    }
+
+    #[test]
+    fn test_compute_backoff_jitter_applied() {
+        let base = Duration::from_millis(100);
+        let max = Duration::from_secs(5);
+        // With 10% jitter: 100ms + 10ms = 110ms
+        assert_eq!(compute_backoff(base, max, 1, 0.10), Duration::from_millis(110));
+    }
+
+    #[test]
+    fn test_compute_backoff_huge_attempt_does_not_overflow() {
+        let base = Duration::from_millis(100);
+        let max = Duration::from_secs(5);
+        // Large attempt → exp clamped to i32::MAX, exponential saturates to f64::INFINITY,
+        // then .min(max_backoff) clamps the result
+        assert_eq!(compute_backoff(base, max, u32::MAX, 0.0), max);
     }
 }
