@@ -5,22 +5,24 @@ use authz_resolver_sdk::{AuthZResolverClient, PolicyEnforcer};
 use modkit_db::DBProvider;
 use modkit_macros::domain_model;
 
-use crate::config::StreamingConfig;
+use crate::config::{EstimationBudgets, QuotaConfig, StreamingConfig};
 use crate::domain::repos::{
     AttachmentRepository, ChatRepository, MessageRepository, ModelPrefRepository, ModelResolver,
-    QuotaUsageRepository, ReactionRepository, ThreadSummaryRepository, TurnRepository,
-    VectorStoreRepository,
+    PolicySnapshotProvider, QuotaUsageRepository, ReactionRepository, ThreadSummaryRepository,
+    TurnRepository, UserLimitsProvider, VectorStoreRepository,
 };
 use crate::infra::llm::LlmProvider;
 
 mod attachment_service;
 mod chat_service;
+pub(crate) mod credit_arithmetic;
 mod model_service;
 mod quota_service;
 mod reaction_service;
 mod stream_service;
 #[cfg(test)]
 pub(crate) mod test_helpers;
+pub(crate) mod token_estimator;
 
 pub(crate) use attachment_service::AttachmentService;
 pub(crate) use chat_service::ChatService;
@@ -117,6 +119,7 @@ impl<
     CR: ChatRepository + 'static,
 > AppServices<TR, MR, QR, CR>
 {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         repos: &Repositories<TR, MR, QR, CR>,
         db: Arc<DbProvider>,
@@ -124,6 +127,10 @@ impl<
         model_resolver: Arc<dyn ModelResolver>,
         llm: Arc<dyn LlmProvider>,
         streaming_config: StreamingConfig,
+        policy_provider: Arc<dyn PolicySnapshotProvider>,
+        limits_provider: Arc<dyn UserLimitsProvider>,
+        estimation_budgets: EstimationBudgets,
+        quota_config: QuotaConfig,
     ) -> Self {
         let enforcer = PolicyEnforcer::new(authz);
 
@@ -157,12 +164,15 @@ impl<
                 Arc::clone(&repos.vector_store),
                 enforcer.clone(),
             ),
-            models: ModelService::new(
-                Arc::clone(&db),
-                Arc::clone(&repos.model_pref),
-                enforcer.clone(),
+            models: ModelService::new(Arc::clone(&db), Arc::clone(&repos.model_pref), enforcer),
+            quota: QuotaService::new(
+                db,
+                Arc::clone(&repos.quota),
+                policy_provider,
+                limits_provider,
+                estimation_budgets,
+                quota_config,
             ),
-            quota: QuotaService::new(db, Arc::clone(&repos.quota), enforcer),
         }
     }
 }

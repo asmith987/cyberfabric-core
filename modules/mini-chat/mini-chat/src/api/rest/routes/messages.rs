@@ -37,7 +37,10 @@ pub(super) fn register_message_routes(
         .path_param("id", "Chat UUID")
         .json_request::<dto::StreamMessageRequest>(openapi, "Message to send")
         .handler(handlers::messages::stream_message)
-        .sse_json::<dto::StreamEvent>(openapi, "SSE stream of chat response events")
+        .sse_json::<crate::domain::stream_events::StreamEvent>(
+            openapi,
+            "SSE stream of chat response events",
+        )
         .standard_errors(openapi)
         .register(router, openapi);
 

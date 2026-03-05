@@ -321,7 +321,10 @@ impl FromServerEvent for ProviderEvent {
             }
 
             other => {
-                debug!(event_name = other, data = %event.data, "unknown provider event, skipping");
+                debug!(
+                    event_name = other,
+                    "ignoring unhandled provider lifecycle event"
+                );
                 Ok(ProviderEvent::Unknown {
                     event_name: other.to_owned(),
                 })

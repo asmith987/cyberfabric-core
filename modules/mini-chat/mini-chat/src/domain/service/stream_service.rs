@@ -10,13 +10,13 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::api::rest::dto::{DoneData, ErrorData, StreamEvent};
 use crate::config::StreamingConfig;
 use crate::domain::error::DomainError;
 use crate::domain::repos::{
     CasCompleteParams, CasTerminalParams, ChatRepository, CreateTurnParams,
     InsertAssistantMessageParams, InsertUserMessageParams, MessageRepository, TurnRepository,
 };
+use crate::domain::stream_events::{DoneData, ErrorData, StreamEvent};
 use crate::infra::db::entity::chat_turn::{Model as TurnModel, TurnState};
 use crate::infra::llm::{
     ClientSseEvent, LlmMessage, LlmProvider, LlmProviderError, LlmRequestBuilder, TerminalOutcome,
@@ -523,7 +523,7 @@ fn spawn_provider_task<TR: TurnRepository + 'static, MR: MessageRepository + 'st
                 if !citations.is_empty() {
                     let _ = tx
                         .send(StreamEvent::Citations(
-                            crate::api::rest::dto::CitationsData { items: citations },
+                            crate::domain::stream_events::CitationsData { items: citations },
                         ))
                         .await;
                 }
@@ -758,8 +758,10 @@ async fn cas_finalize_terminal<TR: TurnRepository, MR: MessageRepository>(
 }
 
 #[cfg(test)]
+#[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
+    use crate::infra::db::repo::chat_repo::ChatRepository as OrmChatRepo;
     use crate::infra::db::repo::message_repo::MessageRepository as MsgRepo;
     use crate::infra::db::repo::turn_repo::TurnRepository as TurnRepo;
     use crate::infra::llm::{
@@ -1035,5 +1037,406 @@ mod tests {
         let outcome = handle.await.expect("task should complete");
         assert_eq!(outcome.terminal, StreamTerminal::Cancelled);
         assert_eq!(outcome.accumulated_text, "partial");
+    }
+
+    // ── Pre-stream check tests (7.6) ──
+
+    use crate::domain::service::test_helpers::{
+        inmem_db, mock_db_provider, mock_enforcer, test_security_ctx,
+    };
+
+    /// Build a `StreamService` with real DB repos and a mock LLM provider.
+    fn build_stream_service(
+        db: Arc<DbProvider>,
+        provider: Arc<dyn LlmProvider>,
+    ) -> StreamService<TurnRepo, MsgRepo, OrmChatRepo> {
+        StreamService::new(
+            db,
+            Arc::new(TurnRepo),
+            Arc::new(MsgRepo),
+            Arc::new(OrmChatRepo::new(modkit_db::odata::LimitCfg {
+                default: 20,
+                max: 100,
+            })),
+            mock_enforcer(),
+            provider,
+            crate::config::StreamingConfig::default(),
+        )
+    }
+
+    /// Insert a parent chat row (required by FK constraints).
+    async fn insert_test_chat(db: &Arc<DbProvider>, tenant_id: Uuid, chat_id: Uuid) {
+        use crate::infra::db::entity::chat::{ActiveModel, Entity as ChatEntity};
+        use modkit_db::secure::secure_insert;
+        use sea_orm::Set;
+        use time::OffsetDateTime;
+
+        let now = OffsetDateTime::now_utc();
+        let am = ActiveModel {
+            id: Set(chat_id),
+            tenant_id: Set(tenant_id),
+            user_id: Set(Uuid::new_v4()),
+            model: Set("gpt-5.2".to_owned()),
+            title: Set(Some("test".to_owned())),
+            is_temporary: Set(false),
+            created_at: Set(now),
+            updated_at: Set(now),
+            deleted_at: Set(None),
+        };
+        let conn = db.conn().unwrap();
+        secure_insert::<ChatEntity>(am, &AccessScope::allow_all(), &conn)
+            .await
+            .expect("insert chat");
+    }
+
+    /// 7.6: Idempotency check — returns Replay when a completed turn exists.
+    #[tokio::test]
+    async fn prestream_idempotency_returns_replay_for_existing_turn() {
+        let db = mock_db_provider(inmem_db().await);
+        let tenant_id = Uuid::new_v4();
+        let chat_id = Uuid::new_v4();
+        let request_id = Uuid::new_v4();
+        insert_test_chat(&db, tenant_id, chat_id).await;
+
+        let provider: Arc<dyn LlmProvider> = Arc::new(MockProvider::completed(&["hi"]));
+        let svc = build_stream_service(db.clone(), provider);
+
+        // Pre-create a completed turn
+        let scope = AccessScope::allow_all();
+        let conn = db.conn().unwrap();
+        let turn_repo = TurnRepo;
+        let turn = turn_repo
+            .create_turn(
+                &conn,
+                &scope,
+                CreateTurnParams {
+                    id: Uuid::new_v4(),
+                    tenant_id,
+                    chat_id,
+                    request_id,
+                    requester_type: "user".to_owned(),
+                    requester_user_id: None,
+                    reserve_tokens: None,
+                    max_output_tokens_applied: None,
+                    reserved_credits_micro: None,
+                    policy_version_applied: None,
+                    effective_model: None,
+                    minimal_generation_floor_applied: None,
+                },
+            )
+            .await
+            .expect("create turn");
+
+        turn_repo
+            .cas_update_state(
+                &conn,
+                &scope,
+                CasTerminalParams {
+                    turn_id: turn.id,
+                    state: TurnState::Completed,
+                    error_code: None,
+                    error_detail: None,
+                },
+            )
+            .await
+            .expect("complete turn");
+
+        // Now run_stream with same request_id → should get Replay
+        let ctx = test_security_ctx(tenant_id);
+        let (tx, _rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+
+        let err = svc
+            .run_stream(
+                ctx,
+                chat_id,
+                request_id,
+                "hello".into(),
+                "gpt-5.2".into(),
+                cancel,
+                tx,
+            )
+            .await
+            .expect_err("should be Replay");
+
+        assert!(
+            matches!(err, StreamError::Replay { .. }),
+            "expected Replay, got: {err:?}"
+        );
+    }
+
+    /// 7.6: Parallel turn guard — returns Conflict when a running turn exists.
+    #[tokio::test]
+    async fn prestream_parallel_guard_returns_conflict() {
+        let db = mock_db_provider(inmem_db().await);
+        let tenant_id = Uuid::new_v4();
+        let chat_id = Uuid::new_v4();
+        insert_test_chat(&db, tenant_id, chat_id).await;
+
+        let provider: Arc<dyn LlmProvider> = Arc::new(MockProvider::completed(&["hi"]));
+        let svc = build_stream_service(db.clone(), provider);
+
+        // Pre-create a running turn for the same chat (different request_id)
+        let scope = AccessScope::allow_all();
+        let conn = db.conn().unwrap();
+        let turn_repo = TurnRepo;
+        turn_repo
+            .create_turn(
+                &conn,
+                &scope,
+                CreateTurnParams {
+                    id: Uuid::new_v4(),
+                    tenant_id,
+                    chat_id,
+                    request_id: Uuid::new_v4(), // different request
+                    requester_type: "user".to_owned(),
+                    requester_user_id: None,
+                    reserve_tokens: None,
+                    max_output_tokens_applied: None,
+                    reserved_credits_micro: None,
+                    policy_version_applied: None,
+                    effective_model: None,
+                    minimal_generation_floor_applied: None,
+                },
+            )
+            .await
+            .expect("create running turn");
+
+        // New request_id → passes idempotency, but hits parallel guard
+        let ctx = test_security_ctx(tenant_id);
+        let (tx, _rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+
+        let err = svc
+            .run_stream(
+                ctx,
+                chat_id,
+                Uuid::new_v4(),
+                "hello".into(),
+                "gpt-5.2".into(),
+                cancel,
+                tx,
+            )
+            .await
+            .expect_err("should be Conflict");
+
+        assert!(
+            matches!(err, StreamError::Conflict { .. }),
+            "expected Conflict, got: {err:?}"
+        );
+    }
+
+    /// 7.6: Happy path — no existing turn, no running turns → succeeds.
+    #[tokio::test]
+    async fn prestream_happy_path_proceeds_to_stream() {
+        let db = mock_db_provider(inmem_db().await);
+        let tenant_id = Uuid::new_v4();
+        let chat_id = Uuid::new_v4();
+        insert_test_chat(&db, tenant_id, chat_id).await;
+
+        let provider: Arc<dyn LlmProvider> = Arc::new(MockProvider::completed(&["Hello"]));
+        let svc = build_stream_service(db, provider);
+
+        let ctx = test_security_ctx(tenant_id);
+        let (tx, mut rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+
+        let handle = svc
+            .run_stream(
+                ctx,
+                chat_id,
+                Uuid::new_v4(),
+                "hello".into(),
+                "gpt-5.2".into(),
+                cancel,
+                tx,
+            )
+            .await
+            .expect("should succeed");
+
+        // Drain events
+        let mut events = Vec::new();
+        while let Some(ev) = rx.recv().await {
+            let is_term = ev.is_terminal();
+            events.push(ev);
+            if is_term {
+                break;
+            }
+        }
+
+        let outcome = handle.await.expect("task should complete");
+        assert_eq!(outcome.terminal, StreamTerminal::Completed);
+        assert_eq!(outcome.accumulated_text, "Hello");
+    }
+
+    // ── Integration tests (8.2, 8.3) ──
+
+    /// 8.2: Duplicate `request_id` returns `Replay` (service-level equivalent of 409).
+    ///
+    /// Full handler 409 mapping requires Axum test server infrastructure;
+    /// this test verifies the service returns the correct `StreamError` variant
+    /// that the handler maps to RFC-9457 JSON 409.
+    #[tokio::test]
+    async fn duplicate_request_id_returns_replay_with_turn_data() {
+        let db = mock_db_provider(inmem_db().await);
+        let tenant_id = Uuid::new_v4();
+        let chat_id = Uuid::new_v4();
+        let request_id = Uuid::new_v4();
+        insert_test_chat(&db, tenant_id, chat_id).await;
+
+        let provider: Arc<dyn LlmProvider> = Arc::new(MockProvider::completed(&["hi"]));
+        let svc = build_stream_service(db.clone(), provider);
+
+        // First call succeeds — creates turn and streams
+        let ctx1 = test_security_ctx(tenant_id);
+        let (tx1, mut rx1) = mpsc::channel(32);
+        let cancel1 = CancellationToken::new();
+        let handle = svc
+            .run_stream(
+                ctx1,
+                chat_id,
+                request_id,
+                "hello".into(),
+                "gpt-5.2".into(),
+                cancel1,
+                tx1,
+            )
+            .await
+            .expect("first call should succeed");
+
+        // Drain events to let the task complete
+        while let Some(ev) = rx1.recv().await {
+            if ev.is_terminal() {
+                break;
+            }
+        }
+        handle.await.expect("task complete");
+
+        // Second call with same request_id → Replay with turn data
+        let ctx2 = test_security_ctx(tenant_id);
+        let (tx2, _rx2) = mpsc::channel(32);
+        let cancel2 = CancellationToken::new();
+        let err = svc
+            .run_stream(
+                ctx2,
+                chat_id,
+                request_id,
+                "hello again".into(),
+                "gpt-5.2".into(),
+                cancel2,
+                tx2,
+            )
+            .await
+            .expect_err("should be Replay");
+
+        match err {
+            StreamError::Replay { turn } => {
+                assert_eq!(turn.chat_id, chat_id);
+                assert_eq!(turn.request_id, request_id);
+            }
+            other => panic!("expected Replay, got: {other:?}"),
+        }
+    }
+
+    /// 8.3: Disconnect finalization — cancellation CAS-finalizes turn to cancelled.
+    ///
+    /// Simulates client disconnect by cancelling the token mid-stream,
+    /// then verifies the turn was finalized to `cancelled` state in the DB.
+    #[tokio::test]
+    async fn disconnect_finalizes_turn_to_cancelled() {
+        // Slow provider that yields one delta then blocks
+        #[allow(de0309_must_have_domain_model)]
+        struct SlowMockProvider;
+
+        #[async_trait::async_trait]
+        impl LlmProvider for SlowMockProvider {
+            async fn stream(
+                &self,
+                _ctx: SecurityContext,
+                _request: LlmRequest<Streaming>,
+                cancel: CancellationToken,
+            ) -> Result<ProviderStream, LlmProviderError> {
+                let inner = stream::unfold(0u8, |state| async move {
+                    if state == 0 {
+                        Some((
+                            Ok(TranslatedEvent::Sse(ClientSseEvent::Delta {
+                                r#type: "text",
+                                content: "partial".to_owned(),
+                            })),
+                            1,
+                        ))
+                    } else {
+                        // Block until cancelled
+                        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                        None
+                    }
+                });
+                Ok(ProviderStream::new(inner, cancel))
+            }
+
+            async fn complete(
+                &self,
+                _ctx: SecurityContext,
+                _request: LlmRequest<NonStreaming>,
+            ) -> Result<ResponseResult, LlmProviderError> {
+                unimplemented!()
+            }
+        }
+
+        let db = mock_db_provider(inmem_db().await);
+        let tenant_id = Uuid::new_v4();
+        let chat_id = Uuid::new_v4();
+        let request_id = Uuid::new_v4();
+        insert_test_chat(&db, tenant_id, chat_id).await;
+
+        let provider: Arc<dyn LlmProvider> = Arc::new(SlowMockProvider);
+        let svc = build_stream_service(db.clone(), provider);
+
+        let ctx = test_security_ctx(tenant_id);
+        let (tx, mut rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+
+        let handle = svc
+            .run_stream(
+                ctx,
+                chat_id,
+                request_id,
+                "hello".into(),
+                "gpt-5.2".into(),
+                cancel.clone(),
+                tx,
+            )
+            .await
+            .expect("should start stream");
+
+        // Read the first delta
+        let first = rx.recv().await.expect("should get delta");
+        assert!(matches!(first, StreamEvent::Delta(_)));
+
+        // Simulate client disconnect
+        cancel.cancel();
+
+        // Wait for task to complete
+        let outcome = handle.await.expect("task should complete");
+        assert_eq!(outcome.terminal, StreamTerminal::Cancelled);
+
+        // Verify the turn was CAS-finalized to cancelled in the DB
+        let scope = AccessScope::for_tenant(tenant_id);
+        let conn = db.conn().unwrap();
+        let turn = TurnRepo
+            .find_by_chat_and_request_id(&conn, &scope, chat_id, request_id)
+            .await
+            .expect("find")
+            .expect("turn should exist");
+
+        assert_eq!(
+            turn.state,
+            TurnState::Cancelled,
+            "turn should be cancelled after disconnect"
+        );
+        assert!(
+            turn.completed_at.is_some(),
+            "completed_at should be set after CAS finalization"
+        );
     }
 }

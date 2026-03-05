@@ -59,6 +59,12 @@ impl Module for MiniChatModule {
         cfg.streaming
             .validate()
             .map_err(|e| anyhow::anyhow!("streaming config: {e}"))?;
+        cfg.estimation_budgets
+            .validate()
+            .map_err(|e| anyhow::anyhow!("estimation_budgets config: {e}"))?;
+        cfg.quota
+            .validate()
+            .map_err(|e| anyhow::anyhow!("quota config: {e}"))?;
 
         let vendor = cfg.vendor.trim().to_owned();
         if vendor.is_empty() {
@@ -131,9 +137,13 @@ impl Module for MiniChatModule {
             &repos,
             db,
             authz,
-            model_policy_gw,
+            model_policy_gw.clone() as Arc<dyn crate::domain::repos::ModelResolver>,
             llm,
             cfg.streaming,
+            model_policy_gw.clone() as Arc<dyn crate::domain::repos::PolicySnapshotProvider>,
+            model_policy_gw as Arc<dyn crate::domain::repos::UserLimitsProvider>,
+            cfg.estimation_budgets,
+            cfg.quota,
         ));
 
         self.service

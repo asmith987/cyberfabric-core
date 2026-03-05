@@ -3,10 +3,12 @@ mod chat_repo;
 mod message_repo;
 mod model_pref_repo;
 mod model_resolver;
+mod policy_snapshot_provider;
 mod quota_usage_repo;
 mod reaction_repo;
 mod thread_summary_repo;
 mod turn_repo;
+mod user_limits_provider;
 mod vector_store_repo;
 
 pub(crate) use attachment_repo::AttachmentRepository;
@@ -16,10 +18,12 @@ pub(crate) use message_repo::{
 };
 pub(crate) use model_pref_repo::ModelPrefRepository;
 pub(crate) use model_resolver::ModelResolver;
+pub(crate) use policy_snapshot_provider::PolicySnapshotProvider;
 pub(crate) use quota_usage_repo::{IncrementReserveParams, QuotaUsageRepository, SettleParams};
 pub(crate) use reaction_repo::ReactionRepository;
 pub(crate) use thread_summary_repo::ThreadSummaryRepository;
 pub(crate) use turn_repo::{
     CasCompleteParams, CasTerminalParams, CreateTurnParams, TurnRepository,
 };
+pub(crate) use user_limits_provider::UserLimitsProvider;
 pub(crate) use vector_store_repo::VectorStoreRepository;

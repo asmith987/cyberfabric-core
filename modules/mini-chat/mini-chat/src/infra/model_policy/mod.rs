@@ -1,14 +1,18 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use mini_chat_sdk::{MiniChatModelPolicyPluginClientV1, MiniChatModelPolicyPluginSpecV1};
+use mini_chat_sdk::{
+    MiniChatModelPolicyPluginClientV1, MiniChatModelPolicyPluginSpecV1, PolicySnapshot,
+};
 use modkit::client_hub::{ClientHub, ClientScope};
 use modkit::plugins::{GtsPluginSelector, choose_plugin_instance};
 use types_registry_sdk::{ListQuery, TypesRegistryClient};
 use uuid::Uuid;
 
+use mini_chat_sdk::UserLimits;
+
 use crate::domain::error::DomainError;
-use crate::domain::repos::ModelResolver;
+use crate::domain::repos::{ModelResolver, PolicySnapshotProvider, UserLimitsProvider};
 
 /// Resolves model IDs by querying the policy plugin discovered via GTS.
 pub struct ModelPolicyGateway {
@@ -115,5 +119,45 @@ impl ModelResolver for ModelPolicyGateway {
                 }
             }
         }
+    }
+}
+
+#[async_trait]
+impl PolicySnapshotProvider for ModelPolicyGateway {
+    async fn get_snapshot(
+        &self,
+        tenant_id: Uuid,
+        policy_version: u64,
+    ) -> Result<PolicySnapshot, DomainError> {
+        let plugin = self.get_policy_plugin().await?;
+        plugin
+            .get_policy_snapshot(tenant_id, policy_version)
+            .await
+            .map_err(|e| DomainError::internal(e.to_string()))
+    }
+
+    async fn get_current_version(&self, tenant_id: Uuid) -> Result<u64, DomainError> {
+        let plugin = self.get_policy_plugin().await?;
+        let info = plugin
+            .get_current_policy_version(tenant_id)
+            .await
+            .map_err(|e| DomainError::internal(e.to_string()))?;
+        Ok(info.policy_version)
+    }
+}
+
+#[async_trait]
+impl UserLimitsProvider for ModelPolicyGateway {
+    async fn get_limits(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        policy_version: u64,
+    ) -> Result<UserLimits, DomainError> {
+        let plugin = self.get_policy_plugin().await?;
+        plugin
+            .get_user_limits(tenant_id, user_id, policy_version)
+            .await
+            .map_err(|e| DomainError::internal(e.to_string()))
     }
 }

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use uuid::Uuid;
 
 use crate::error::MiniChatModelPolicyPluginError;
-use crate::models::{PolicySnapshot, PolicyVersionInfo};
+use crate::models::{PolicySnapshot, PolicyVersionInfo, UserLimits};
 
 /// Plugin API trait for mini-chat model policy implementations.
 ///
@@ -23,4 +23,12 @@ pub trait MiniChatModelPolicyPluginClientV1: Send + Sync {
         tenant_id: Uuid,
         policy_version: u64,
     ) -> Result<PolicySnapshot, MiniChatModelPolicyPluginError>;
+
+    /// Get per-user credit allocations for a specific policy version.
+    async fn get_user_limits(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        policy_version: u64,
+    ) -> Result<UserLimits, MiniChatModelPolicyPluginError>;
 }

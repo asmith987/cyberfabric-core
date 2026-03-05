@@ -14,7 +14,9 @@ use sea_orm_migration::MigratorTrait;
 use uuid::Uuid;
 
 use crate::domain::error::DomainError;
-use crate::domain::repos::{ModelResolver, ThreadSummaryRepository};
+use crate::domain::repos::{
+    ModelResolver, PolicySnapshotProvider, ThreadSummaryRepository, UserLimitsProvider,
+};
 
 // ── Mock AuthZ Resolver ──
 
@@ -190,4 +192,62 @@ pub fn mock_thread_summary_repo() -> Arc<dyn ThreadSummaryRepository> {
 
 pub fn mock_db_provider(db: Db) -> Arc<DBProvider<modkit_db::DbError>> {
     Arc::new(DBProvider::new(db))
+}
+
+// ── Mock Policy Snapshot Provider ──
+
+use mini_chat_sdk::{PolicySnapshot, UserLimits};
+use std::sync::Mutex;
+
+pub struct MockPolicySnapshotProvider {
+    snapshot: Mutex<PolicySnapshot>,
+}
+
+impl MockPolicySnapshotProvider {
+    pub fn new(snapshot: PolicySnapshot) -> Self {
+        Self {
+            snapshot: Mutex::new(snapshot),
+        }
+    }
+}
+
+#[async_trait]
+impl PolicySnapshotProvider for MockPolicySnapshotProvider {
+    async fn get_snapshot(
+        &self,
+        _tenant_id: Uuid,
+        _policy_version: u64,
+    ) -> Result<PolicySnapshot, DomainError> {
+        Ok(self.snapshot.lock().unwrap().clone())
+    }
+
+    async fn get_current_version(&self, _tenant_id: Uuid) -> Result<u64, DomainError> {
+        Ok(self.snapshot.lock().unwrap().policy_version)
+    }
+}
+
+// ── Mock User Limits Provider ──
+
+pub struct MockUserLimitsProvider {
+    limits: Mutex<UserLimits>,
+}
+
+impl MockUserLimitsProvider {
+    pub fn new(limits: UserLimits) -> Self {
+        Self {
+            limits: Mutex::new(limits),
+        }
+    }
+}
+
+#[async_trait]
+impl UserLimitsProvider for MockUserLimitsProvider {
+    async fn get_limits(
+        &self,
+        _tenant_id: Uuid,
+        _user_id: Uuid,
+        _policy_version: u64,
+    ) -> Result<UserLimits, DomainError> {
+        Ok(self.limits.lock().unwrap().clone())
+    }
 }

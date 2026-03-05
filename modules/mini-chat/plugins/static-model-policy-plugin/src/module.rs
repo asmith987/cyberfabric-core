@@ -44,7 +44,12 @@ impl Module for StaticMiniChatModelPolicyPlugin {
 
         // Create service and lock initialization before any external side-effects
         // so that retries fail fast without duplicate registrations.
-        let service = Arc::new(Service::new(cfg.model_catalog));
+        let service = Arc::new(Service::new(
+            cfg.model_catalog,
+            cfg.kill_switches,
+            cfg.default_standard_limits,
+            cfg.default_premium_limits,
+        ));
         self.service
             .set(service.clone())
             .map_err(|_| anyhow::anyhow!("{} module already initialized", Self::MODULE_NAME))?;

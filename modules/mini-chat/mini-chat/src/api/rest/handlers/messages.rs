@@ -16,8 +16,10 @@ use tokio::time::{Interval, interval};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use crate::api::rest::dto::{StreamEvent, StreamEventKind, StreamMessageRequest, StreamPhase};
+use crate::api::rest::dto::StreamMessageRequest;
+use crate::api::rest::sse::{StreamEventKind, StreamPhase};
 use crate::domain::service::StreamError;
+use crate::domain::stream_events::StreamEvent;
 use crate::module::AppServices;
 
 use super::not_implemented;
@@ -220,7 +222,7 @@ impl Stream for SseRelay {
                 // If no terminal event was received, emit an error to honour
                 // the SSE contract (streams must end with done or error).
                 if !this.phase.is_terminal() {
-                    let error_event = StreamEvent::Error(crate::api::rest::dto::ErrorData {
+                    let error_event = StreamEvent::Error(crate::domain::stream_events::ErrorData {
                         code: "stream_interrupted".to_owned(),
                         message: "Provider stream ended unexpectedly".to_owned(),
                     });

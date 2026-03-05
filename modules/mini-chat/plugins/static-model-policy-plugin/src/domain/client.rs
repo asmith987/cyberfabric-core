@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use mini_chat_sdk::{
     MiniChatModelPolicyPluginClientV1, MiniChatModelPolicyPluginError, PolicySnapshot,
-    PolicyVersionInfo,
+    PolicyVersionInfo, UserLimits,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;
@@ -33,6 +33,25 @@ impl MiniChatModelPolicyPluginClientV1 for Service {
             tenant_id,
             policy_version,
             model_catalog: self.catalog.clone(),
+            kill_switches: self.kill_switches.clone(),
+        })
+    }
+
+    async fn get_user_limits(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+        policy_version: u64,
+    ) -> Result<UserLimits, MiniChatModelPolicyPluginError> {
+        if policy_version != 1 {
+            return Err(MiniChatModelPolicyPluginError::NotFound);
+        }
+        Ok(UserLimits {
+            tenant_id,
+            user_id,
+            policy_version,
+            standard: self.default_standard_limits.clone(),
+            premium: self.default_premium_limits.clone(),
         })
     }
 }

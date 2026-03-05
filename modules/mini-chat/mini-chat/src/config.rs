@@ -11,6 +11,10 @@ pub struct MiniChatConfig {
     pub streaming: StreamingConfig,
     #[serde(default = "default_vendor")]
     pub vendor: String,
+    #[serde(default)]
+    pub estimation_budgets: EstimationBudgets,
+    #[serde(default)]
+    pub quota: QuotaConfig,
 }
 
 /// SSE streaming tuning parameters.
@@ -71,8 +75,110 @@ impl Default for MiniChatConfig {
             url_prefix: default_url_prefix(),
             streaming: StreamingConfig::default(),
             vendor: default_vendor(),
+            estimation_budgets: EstimationBudgets::default(),
+            quota: QuotaConfig::default(),
         }
     }
+}
+
+/// Token estimation parameters sourced from `ConfigMap` (P1).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EstimationBudgets {
+    #[serde(default = "default_bytes_per_token")]
+    pub bytes_per_token_conservative: u32,
+    #[serde(default = "default_fixed_overhead")]
+    pub fixed_overhead_tokens: u32,
+    #[serde(default = "default_safety_margin")]
+    pub safety_margin_pct: u32,
+    #[serde(default = "default_image_budget")]
+    pub image_token_budget: u32,
+    #[serde(default = "default_tool_surcharge")]
+    pub tool_surcharge_tokens: u32,
+    #[serde(default = "default_web_surcharge")]
+    pub web_search_surcharge_tokens: u32,
+    #[serde(default = "default_min_gen_floor")]
+    pub minimal_generation_floor: u32,
+}
+
+impl Default for EstimationBudgets {
+    fn default() -> Self {
+        Self {
+            bytes_per_token_conservative: default_bytes_per_token(),
+            fixed_overhead_tokens: default_fixed_overhead(),
+            safety_margin_pct: default_safety_margin(),
+            image_token_budget: default_image_budget(),
+            tool_surcharge_tokens: default_tool_surcharge(),
+            web_search_surcharge_tokens: default_web_surcharge(),
+            minimal_generation_floor: default_min_gen_floor(),
+        }
+    }
+}
+
+impl EstimationBudgets {
+    pub fn validate(self) -> Result<(), String> {
+        if self.bytes_per_token_conservative == 0 {
+            return Err("bytes_per_token_conservative must be > 0".to_owned());
+        }
+        if self.minimal_generation_floor == 0 {
+            return Err("minimal_generation_floor must be > 0".to_owned());
+        }
+        Ok(())
+    }
+}
+
+fn default_bytes_per_token() -> u32 {
+    4
+}
+fn default_fixed_overhead() -> u32 {
+    100
+}
+fn default_safety_margin() -> u32 {
+    10
+}
+fn default_image_budget() -> u32 {
+    1000
+}
+fn default_tool_surcharge() -> u32 {
+    500
+}
+fn default_web_surcharge() -> u32 {
+    500
+}
+fn default_min_gen_floor() -> u32 {
+    50
+}
+
+/// Quota enforcement configuration.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuotaConfig {
+    #[serde(default = "default_overshoot_tolerance")]
+    pub overshoot_tolerance_factor: f64,
+}
+
+impl Default for QuotaConfig {
+    fn default() -> Self {
+        Self {
+            overshoot_tolerance_factor: default_overshoot_tolerance(),
+        }
+    }
+}
+
+impl QuotaConfig {
+    pub fn validate(self) -> Result<(), String> {
+        if !(1.0..=1.5).contains(&self.overshoot_tolerance_factor) {
+            return Err(format!(
+                "overshoot_tolerance_factor must be 1.0-1.5, got {}",
+                self.overshoot_tolerance_factor
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn default_overshoot_tolerance() -> f64 {
+    1.10
 }
 
 fn default_url_prefix() -> String {
@@ -90,6 +196,62 @@ mod tests {
     #[test]
     fn default_config_is_valid() {
         StreamingConfig::default().validate().unwrap();
+        EstimationBudgets::default().validate().unwrap();
+        QuotaConfig::default().validate().unwrap();
+    }
+
+    #[test]
+    fn estimation_budgets_validation() {
+        let valid = EstimationBudgets::default();
+
+        assert!(
+            (EstimationBudgets {
+                bytes_per_token_conservative: 0,
+                ..valid
+            })
+            .validate()
+            .is_err()
+        );
+        assert!(
+            (EstimationBudgets {
+                minimal_generation_floor: 0,
+                ..valid
+            })
+            .validate()
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn quota_config_validation() {
+        assert!(
+            (QuotaConfig {
+                overshoot_tolerance_factor: 0.99
+            })
+            .validate()
+            .is_err()
+        );
+        assert!(
+            (QuotaConfig {
+                overshoot_tolerance_factor: 1.0
+            })
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            (QuotaConfig {
+                overshoot_tolerance_factor: 1.5
+            })
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            (QuotaConfig {
+                overshoot_tolerance_factor: 1.51
+            })
+            .validate()
+            .is_err()
+        );
     }
 
     #[test]
