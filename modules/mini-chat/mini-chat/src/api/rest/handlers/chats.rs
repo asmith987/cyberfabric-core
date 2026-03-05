@@ -20,7 +20,7 @@ pub(crate) async fn create_chat(
     Json(req_body): Json<CreateChatReq>,
 ) -> ApiResult<impl IntoResponse> {
     let new = NewChat {
-        model: req_body.model.unwrap_or_default(),
+        model: req_body.model,
         title: req_body.title,
         is_temporary: false,
     };

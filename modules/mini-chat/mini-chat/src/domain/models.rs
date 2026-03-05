@@ -35,7 +35,7 @@ pub struct ChatDetail {
 #[domain_model]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewChat {
-    pub model: String,
+    pub model: Option<String>,
     pub title: Option<String>,
     pub is_temporary: bool,
 }

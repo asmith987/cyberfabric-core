@@ -69,7 +69,11 @@ impl ModelPolicyGateway {
 
 #[async_trait]
 impl ModelResolver for ModelPolicyGateway {
-    async fn resolve_model(&self, tenant_id: Uuid, model: &str) -> Result<String, DomainError> {
+    async fn resolve_model(
+        &self,
+        tenant_id: Uuid,
+        model: Option<String>,
+    ) -> Result<String, DomainError> {
         let plugin = self.get_policy_plugin().await?;
         let version_info = plugin
             .get_current_policy_version(tenant_id)
@@ -80,29 +84,35 @@ impl ModelResolver for ModelPolicyGateway {
             .await
             .map_err(|e| DomainError::internal(e.to_string()))?;
 
-        if model.is_empty() {
-            // Find default model (prefer is_default + enabled, else first enabled)
-            let default = snapshot
-                .model_catalog
-                .iter()
-                .find(|m| m.is_default && m.global_enabled)
-                .or_else(|| snapshot.model_catalog.iter().find(|m| m.global_enabled));
+        match model {
+            None => {
+                // Find default model (prefer is_default + enabled, else first enabled)
+                let default = snapshot
+                    .model_catalog
+                    .iter()
+                    .find(|m| m.is_default && m.global_enabled)
+                    .or_else(|| snapshot.model_catalog.iter().find(|m| m.global_enabled));
 
-            match default {
-                Some(entry) => Ok(entry.model_id.clone()),
-                None => Err(DomainError::invalid_model("no models available in catalog")),
+                match default {
+                    Some(entry) => Ok(entry.model_id.clone()),
+                    None => Err(DomainError::invalid_model("no models available in catalog")),
+                }
             }
-        } else {
-            // Validate provided model exists in catalog
-            let found = snapshot
-                .model_catalog
-                .iter()
-                .any(|m| m.model_id == model && m.global_enabled);
+            Some(model) if model.is_empty() => {
+                Err(DomainError::invalid_model("model must not be empty"))
+            }
+            Some(model) => {
+                // Validate provided model exists in catalog
+                let found = snapshot
+                    .model_catalog
+                    .iter()
+                    .any(|m| m.model_id == model && m.global_enabled);
 
-            if found {
-                Ok(model.to_owned())
-            } else {
-                Err(DomainError::invalid_model(model))
+                if found {
+                    Ok(model)
+                } else {
+                    Err(DomainError::invalid_model(&model))
+                }
             }
         }
     }

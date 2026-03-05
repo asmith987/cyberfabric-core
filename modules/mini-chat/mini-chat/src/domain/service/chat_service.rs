@@ -72,7 +72,7 @@ impl<CR: ChatRepository + 'static> ChatService<CR> {
 
         let model = self
             .model_resolver
-            .resolve_model(tenant_id, &new.model)
+            .resolve_model(tenant_id, new.model)
             .await?;
 
         let now = OffsetDateTime::now_utc();
@@ -201,7 +201,7 @@ impl<CR: ChatRepository + 'static> ChatService<CR> {
             .transaction(|tx| {
                 let scope = scope.clone();
                 Box::pin(async move {
-                    let map = |e: DomainError| modkit_db::DbError::Other(anyhow::anyhow!(e));
+                    let map = |e: DomainError| modkit_db::DbError::Other(anyhow::Error::new(e));
 
                     let mut chat = chat_repo
                         .get(tx, &scope, id)
@@ -225,7 +225,13 @@ impl<CR: ChatRepository + 'static> ChatService<CR> {
                 })
             })
             .await
-            .map_err(DomainError::from)?;
+            .map_err(|e| match e {
+                modkit_db::DbError::Other(err) => match err.downcast::<DomainError>() {
+                    Ok(domain_err) => domain_err,
+                    Err(err) => DomainError::from(modkit_db::DbError::Other(err)),
+                },
+                other => DomainError::from(other),
+            })?;
 
         tracing::debug!("Successfully updated chat title");
         Ok(Self::to_detail(updated, message_count))

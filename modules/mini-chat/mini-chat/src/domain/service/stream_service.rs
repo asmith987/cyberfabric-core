@@ -279,7 +279,7 @@ impl<TR: TurnRepository + 'static, MR: MessageRepository + 'static, CR: ChatRepo
                             },
                         )
                         .await
-                        .map_err(|e| modkit_db::DbError::Other(anyhow::anyhow!(e)))?;
+                        .map_err(|e| modkit_db::DbError::Other(anyhow::Error::new(e)))?;
 
                     turn_repo
                         .create_turn(
@@ -301,14 +301,20 @@ impl<TR: TurnRepository + 'static, MR: MessageRepository + 'static, CR: ChatRepo
                             },
                         )
                         .await
-                        .map_err(|e| modkit_db::DbError::Other(anyhow::anyhow!(e)))?;
+                        .map_err(|e| modkit_db::DbError::Other(anyhow::Error::new(e)))?;
 
                     Ok(())
                 })
             })
             .await
             .map_err(|e| StreamError::TurnCreationFailed {
-                source: DomainError::from(e),
+                source: match e {
+                    modkit_db::DbError::Other(err) => match err.downcast::<DomainError>() {
+                        Ok(domain_err) => domain_err,
+                        Err(err) => DomainError::from(modkit_db::DbError::Other(err)),
+                    },
+                    other => DomainError::from(other),
+                },
             })?;
 
         // Pre-generate assistant message ID (sent in DoneData and used in CAS)

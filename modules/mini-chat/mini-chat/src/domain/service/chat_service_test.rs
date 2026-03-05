@@ -44,7 +44,7 @@ async fn create_chat_default_model() {
         .create_chat(
             &ctx,
             NewChat {
-                model: String::new(), // empty → default
+                model: None, // empty → default
                 title: Some("Hello".to_owned()),
                 is_temporary: false,
             },
@@ -68,7 +68,7 @@ async fn create_chat_explicit_valid_model() {
         .create_chat(
             &ctx,
             NewChat {
-                model: "gpt-5.2".to_owned(),
+                model: Some("gpt-5.2".to_owned()),
                 title: None,
                 is_temporary: false,
             },
@@ -89,7 +89,7 @@ async fn create_chat_disabled_model_rejected() {
         .create_chat(
             &ctx,
             NewChat {
-                model: "gpt-5-mini".to_owned(),
+                model: Some("gpt-5-mini".to_owned()),
                 title: None,
                 is_temporary: false,
             },
@@ -114,7 +114,7 @@ async fn create_chat_empty_title_rejected() {
         .create_chat(
             &ctx,
             NewChat {
-                model: "gpt-5.2".to_owned(),
+                model: Some("gpt-5.2".to_owned()),
                 title: Some(String::new()),
                 is_temporary: false,
             },
@@ -138,7 +138,7 @@ async fn create_chat_title_trimmed() {
         .create_chat(
             &ctx,
             NewChat {
-                model: "gpt-5.2".to_owned(),
+                model: Some("gpt-5.2".to_owned()),
                 title: Some("  padded  ".to_owned()),
                 is_temporary: false,
             },
@@ -159,7 +159,7 @@ async fn create_chat_invalid_model() {
         .create_chat(
             &ctx,
             NewChat {
-                model: "nonexistent-model".to_owned(),
+                model: Some("nonexistent-model".to_owned()),
                 title: None,
                 is_temporary: false,
             },
@@ -185,7 +185,7 @@ async fn get_chat_happy_path() {
         .create_chat(
             &ctx,
             NewChat {
-                model: "gpt-5.2".to_owned(),
+                model: Some("gpt-5.2".to_owned()),
                 title: Some("Test".to_owned()),
                 is_temporary: false,
             },
@@ -224,7 +224,7 @@ async fn update_chat_title_happy_path() {
         .create_chat(
             &ctx,
             NewChat {
-                model: "gpt-5.2".to_owned(),
+                model: Some("gpt-5.2".to_owned()),
                 title: Some("Old Title".to_owned()),
                 is_temporary: false,
             },
@@ -256,7 +256,7 @@ async fn update_chat_title_empty_rejected() {
         .create_chat(
             &ctx,
             NewChat {
-                model: "gpt-5.2".to_owned(),
+                model: Some("gpt-5.2".to_owned()),
                 title: Some("Title".to_owned()),
                 is_temporary: false,
             },
@@ -291,7 +291,7 @@ async fn update_chat_title_whitespace_only_rejected() {
         .create_chat(
             &ctx,
             NewChat {
-                model: "gpt-5.2".to_owned(),
+                model: Some("gpt-5.2".to_owned()),
                 title: Some("Title".to_owned()),
                 is_temporary: false,
             },
@@ -326,7 +326,7 @@ async fn update_chat_title_too_long_rejected() {
         .create_chat(
             &ctx,
             NewChat {
-                model: "gpt-5.2".to_owned(),
+                model: Some("gpt-5.2".to_owned()),
                 title: Some("Title".to_owned()),
                 is_temporary: false,
             },
@@ -362,7 +362,7 @@ async fn delete_chat_happy_path() {
         .create_chat(
             &ctx,
             NewChat {
-                model: "gpt-5.2".to_owned(),
+                model: Some("gpt-5.2".to_owned()),
                 title: Some("To Delete".to_owned()),
                 is_temporary: false,
             },
@@ -391,7 +391,7 @@ async fn list_chats_returns_page() {
     svc.create_chat(
         &ctx,
         NewChat {
-            model: "gpt-5.2".to_owned(),
+            model: Some("gpt-5.2".to_owned()),
             title: Some("First".to_owned()),
             is_temporary: false,
         },
@@ -402,7 +402,7 @@ async fn list_chats_returns_page() {
     svc.create_chat(
         &ctx,
         NewChat {
-            model: "gpt-5.2".to_owned(),
+            model: Some("gpt-5.2".to_owned()),
             title: Some("Second".to_owned()),
             is_temporary: false,
         },
@@ -439,7 +439,7 @@ async fn list_chats_cross_tenant_returns_empty() {
     svc.create_chat(
         &ctx_a,
         NewChat {
-            model: "gpt-5.2".to_owned(),
+            model: Some("gpt-5.2".to_owned()),
             title: Some("Tenant A chat".to_owned()),
             is_temporary: false,
         },
@@ -470,7 +470,7 @@ async fn list_chats_cross_owner_returns_empty() {
     svc.create_chat(
         &ctx_a,
         NewChat {
-            model: "gpt-5.2".to_owned(),
+            model: Some("gpt-5.2".to_owned()),
             title: Some("User A chat".to_owned()),
             is_temporary: false,
         },
@@ -500,7 +500,7 @@ async fn get_chat_cross_tenant_not_found() {
         .create_chat(
             &ctx_a,
             NewChat {
-                model: "gpt-5.2".to_owned(),
+                model: Some("gpt-5.2".to_owned()),
                 title: Some("Tenant A chat".to_owned()),
                 is_temporary: false,
             },
@@ -532,7 +532,7 @@ async fn delete_chat_cross_owner_not_found() {
         .create_chat(
             &ctx_a,
             NewChat {
-                model: "gpt-5.2".to_owned(),
+                model: Some("gpt-5.2".to_owned()),
                 title: Some("User A chat".to_owned()),
                 is_temporary: false,
             },

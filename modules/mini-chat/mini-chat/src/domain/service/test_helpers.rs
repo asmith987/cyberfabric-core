@@ -117,16 +117,23 @@ pub struct MockModelResolver;
 
 #[async_trait]
 impl ModelResolver for MockModelResolver {
-    async fn resolve_model(&self, _tenant_id: Uuid, model: &str) -> Result<String, DomainError> {
+    async fn resolve_model(
+        &self,
+        _tenant_id: Uuid,
+        model: Option<String>,
+    ) -> Result<String, DomainError> {
         let catalog = [("gpt-5.2", true), ("gpt-5-mini", false)];
 
-        if model.is_empty() {
-            // Return default model
-            Ok("gpt-5.2".to_owned())
-        } else if catalog.iter().any(|(id, enabled)| *id == model && *enabled) {
-            Ok(model.to_owned())
-        } else {
-            Err(DomainError::invalid_model(model))
+        match model {
+            None => Ok("gpt-5.2".to_owned()),
+            Some(m) if m.is_empty() => Err(DomainError::invalid_model("model must not be empty")),
+            Some(m) => {
+                if catalog.iter().any(|(id, enabled)| *id == m && *enabled) {
+                    Ok(m)
+                } else {
+                    Err(DomainError::invalid_model(&m))
+                }
+            }
         }
     }
 }
