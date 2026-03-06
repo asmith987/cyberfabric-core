@@ -4,7 +4,7 @@
 
 **Status**: accepted
 
-**ID**: `fdd-chat-engine-adr-branching-strategy`
+**ID**: `cpt-chat-engine-adr-branching-strategy`
 
 ## Context and Problem Statement
 
@@ -48,18 +48,18 @@ Chosen option: "Parent reference with history truncation", because it preserves 
 ## Related Design Elements
 
 **Actors**:
-* `fdd-chat-engine-actor-client` - Specifies parent_message_id for branching
-* `fdd-chat-engine-actor-webhook-backend` - Receives truncated history for branch
-* `fdd-chat-engine-message-processing` - Loads context up to parent, validates references
+* `cpt-chat-engine-actor-client` - Specifies parent_message_id for branching
+* `cpt-chat-engine-actor-backend-plugin` - Receives truncated history for branch
+* `cpt-chat-engine-message-processing` - Loads context up to parent, validates references
 
 **Requirements**:
-* `fdd-chat-engine-fr-branch-message` - Client specifies parent, creates new branch
-* `fdd-chat-engine-nfr-data-integrity` - Foreign key constraint on parent_message_id
-* `fdd-chat-engine-usecase-branch-message` - Full use case for branching
+* `cpt-chat-engine-fr-branch-message` - Client specifies parent, creates new branch
+* `cpt-chat-engine-nfr-data-integrity` - Foreign key constraint on parent_message_id
+* `cpt-chat-engine-usecase-branch-message` - Full use case for branching
 
 **Design Elements**:
-* `fdd-chat-engine-entity-message` - parent_message_id enables branching
-* `fdd-chat-engine-design-context-tree-traversal` - Recursive CTE for history loading
+* `cpt-chat-engine-entity-message` - parent_message_id enables branching
+* `cpt-chat-engine-design-context-tree-traversal` - Recursive CTE for history loading
 * Sequence diagram S7 (Branch from Historical Message)
 
 **Related ADRs**:

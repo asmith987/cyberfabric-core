@@ -4,7 +4,7 @@
 
 **Status**: accepted
 
-**ID**: `fdd-chat-engine-adr-backpressure-handling`
+**ID**: `cpt-chat-engine-adr-backpressure-handling`
 
 ## Context and Problem Statement
 
@@ -47,17 +47,17 @@ Chosen option: "Per-stream buffer with limit and pause", because it prevents mem
 ## Related Design Elements
 
 **Actors**:
-* `fdd-chat-engine-response-streaming` - Implements buffer and backpressure logic
-* `fdd-chat-engine-actor-webhook-backend` - Paused via HTTP/2 flow control
-* `fdd-chat-engine-actor-client` - Slow consumption triggers backpressure
+* `cpt-chat-engine-response-streaming` - Implements buffer and backpressure logic
+* `cpt-chat-engine-actor-backend-plugin` - Paused via HTTP/2 flow control
+* `cpt-chat-engine-actor-client` - Slow consumption triggers backpressure
 
 **Requirements**:
-* `fdd-chat-engine-nfr-streaming` - Backpressure handling requirement
-* `fdd-chat-engine-fr-stop-streaming` - Client disconnect cancels backend
+* `cpt-chat-engine-nfr-streaming` - Backpressure handling requirement
+* `cpt-chat-engine-fr-stop-streaming` - Client disconnect cancels backend
 
 **Design Elements**:
-* `fdd-chat-engine-design-context-backpressure` - Implementation details (10MB limit, HTTP/2 flow control)
-* `fdd-chat-engine-response-streaming` - Buffer management per stream
+* `cpt-chat-engine-design-context-backpressure` - Implementation details (10MB limit, HTTP/2 flow control)
+* `cpt-chat-engine-response-streaming` - Buffer management per stream
 
 **Related ADRs**:
 * ADR-0003 (Streaming Architecture) - Streaming design depends on backpressure handling

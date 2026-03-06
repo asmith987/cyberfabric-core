@@ -4,7 +4,7 @@
 
 **Status**: accepted
 
-**ID**: `fdd-chat-engine-adr-webhook-event-types`
+**ID**: `cpt-chat-engine-adr-webhook-event-types`
 
 ## Context and Problem Statement
 
@@ -45,20 +45,20 @@ Chosen option: "Typed events with event field", because it provides clear type d
 ## Related Design Elements
 
 **Actors**:
-* `fdd-chat-engine-actor-webhook-backend` - Receives typed events, routes internally
-* `fdd-chat-engine-webhook-integration` - Constructs event payloads with correct type
+* `cpt-chat-engine-actor-backend-plugin` - Receives typed events, routes internally
+* `cpt-chat-engine-webhook-integration` - Constructs event payloads with correct type
 
 **Requirements**:
-* `fdd-chat-engine-fr-create-session` - session.created event
-* `fdd-chat-engine-fr-send-message` - message.new event
-* `fdd-chat-engine-fr-recreate-response` - message.recreate event
-* `fdd-chat-engine-fr-delete-session` - session.deleted event
-* `fdd-chat-engine-fr-session-summary` - session.summary event
-* `fdd-chat-engine-fr-stop-streaming` - message.aborted event
+* `cpt-chat-engine-fr-create-session` - session.created event
+* `cpt-chat-engine-fr-send-message` - message.new event
+* `cpt-chat-engine-fr-recreate-response` - message.recreate event
+* `cpt-chat-engine-fr-delete-session` - session.deleted event
+* `cpt-chat-engine-fr-session-summary` - session.summary event
+* `cpt-chat-engine-fr-stop-streaming` - message.aborted event
 
 **Design Elements**:
 * Webhook API specification (Section 3.3.2 of DESIGN.md) defines all event schemas
-* `fdd-chat-engine-webhook-integration` - Event payload construction
+* `cpt-chat-engine-webhook-integration` - Event payload construction
 
 **Related ADRs**:
 * ADR-0006 (Webhook Protocol) - HTTP protocol carrying these events

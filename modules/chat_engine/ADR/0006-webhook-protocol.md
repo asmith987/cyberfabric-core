@@ -4,7 +4,7 @@
 
 **Status**: superseded by ADR-0026 (CyberFabric Plugin System for Backend Integration)
 
-**ID**: `fdd-chat-engine-adr-webhook-protocol`
+**ID**: `cpt-chat-engine-adr-webhook-protocol`
 
 ## Context and Problem Statement
 
@@ -47,19 +47,19 @@ Chosen option: "HTTP POST with chunked streaming", because it provides simple in
 ## Related Design Elements
 
 **Actors**:
-* `fdd-chat-engine-actor-webhook-backend` - Receives HTTP POST, responds with streaming
+* `cpt-chat-engine-actor-webhook-backend` - Receives HTTP POST, responds with streaming
 
 **Requirements**:
-* `fdd-chat-engine-fr-send-message` - Forward message to webhook with streaming response
-* `fdd-chat-engine-fr-create-session` - session.created event to webhook
-* `fdd-chat-engine-nfr-backend-isolation` - Timeout and circuit breaker per backend
-* `fdd-chat-engine-nfr-streaming` - Streaming performance requirements
+* `cpt-chat-engine-fr-send-message` - Forward message to webhook with streaming response
+* `cpt-chat-engine-fr-create-session` - session.created event to webhook
+* `cpt-chat-engine-nfr-backend-isolation` - Timeout and circuit breaker per backend
+* `cpt-chat-engine-nfr-streaming` - Streaming performance requirements
 
 **Design Elements**:
-* `fdd-chat-engine-webhook-integration` - Chat Engine's HTTP client functionality for invoking webhooks
-* `fdd-chat-engine-constraint-sync-webhooks` - Design constraint mandating synchronous protocol
-* `fdd-chat-engine-entity-session-type` - Stores webhook_url and timeout per backend
-* `fdd-chat-engine-design-context-circuit-breaker` - Circuit breaker implementation per backend
+* `cpt-chat-engine-webhook-integration` - Chat Engine's HTTP client functionality for invoking webhooks
+* `cpt-chat-engine-constraint-sync-webhooks` - Design constraint mandating synchronous protocol
+* `cpt-chat-engine-entity-session-type` - Stores webhook_url and timeout per backend
+* `cpt-chat-engine-design-context-circuit-breaker` - Circuit breaker implementation per backend
 
 **Related ADRs**:
 * ADR-0003 (Streaming Architecture) - Depends on HTTP streaming from backends

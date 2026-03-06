@@ -4,7 +4,7 @@
 
 **Status**: accepted
 
-**ID**: `fdd-chat-engine-adr-streaming-architecture`
+**ID**: `cpt-chat-engine-adr-streaming-architecture`
 
 ## Context and Problem Statement
 
@@ -45,19 +45,19 @@ Chosen option: "Streaming-first with HTTP chunked transfer", because it minimize
 ## Related Design Elements
 
 **Actors**:
-* `fdd-chat-engine-actor-client` - Receives HTTP chunked responses with streaming message chunks (NDJSON)
-* `fdd-chat-engine-actor-webhook-backend` - Streams HTTP responses (chunked transfer encoding)
+* `cpt-chat-engine-actor-client` - Receives HTTP chunked responses with streaming message chunks (NDJSON)
+* `cpt-chat-engine-actor-backend-plugin` - Streams HTTP responses (chunked transfer encoding)
 
 **Requirements**:
-* `fdd-chat-engine-fr-send-message` - Streaming response from backend to client
-* `fdd-chat-engine-fr-stop-streaming` - Cancel streaming mid-generation
-* `fdd-chat-engine-nfr-streaming` - Latency < 10ms overhead, first byte < 200ms
-* `fdd-chat-engine-nfr-response-time` - Overall routing latency < 100ms
+* `cpt-chat-engine-fr-send-message` - Streaming response from backend to client
+* `cpt-chat-engine-fr-stop-streaming` - Cancel streaming mid-generation
+* `cpt-chat-engine-nfr-streaming` - Latency < 10ms overhead, first byte < 200ms
+* `cpt-chat-engine-nfr-response-time` - Overall routing latency < 100ms
 
 **Design Elements**:
-* `fdd-chat-engine-response-streaming` - Chat Engine's HTTP chunked streaming and backpressure functionality
-* `fdd-chat-engine-principle-streaming` - Design principle mandating streaming-first
-* `fdd-chat-engine-design-context-backpressure` - Implementation details for flow control
+* `cpt-chat-engine-response-streaming` - Chat Engine's HTTP chunked streaming and backpressure functionality
+* `cpt-chat-engine-principle-streaming` - Design principle mandating streaming-first
+* `cpt-chat-engine-design-context-backpressure` - Implementation details for flow control
 
 **Related ADRs**:
 * ADR-0006 (Webhook Protocol) - HTTP streaming from backends via chunked encoding

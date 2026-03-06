@@ -4,7 +4,7 @@
 
 **Status**: accepted
 
-**ID**: `fdd-chat-engine-adr-session-sharing`
+**ID**: `cpt-chat-engine-adr-session-sharing`
 
 ## Context and Problem Statement
 
@@ -48,17 +48,17 @@ Chosen option: "Cryptographic share token with separate table", because it provi
 ## Related Design Elements
 
 **Actors**:
-* `fdd-chat-engine-actor-client` - Creates share token, shares URL with recipients
-* `fdd-chat-engine-actor-end-user` - Accesses shared session via token
-* `fdd-chat-engine-session-management` - Generates tokens, validates access
+* `cpt-chat-engine-actor-client` - Creates share token, shares URL with recipients
+* `cpt-chat-engine-actor-end-user` - Accesses shared session via token
+* `cpt-chat-engine-session-management` - Generates tokens, validates access
 
 **Requirements**:
-* `fdd-chat-engine-fr-share-session` - Generate token, recipients view and branch
-* `fdd-chat-engine-usecase-share-session` - Full use case for sharing
+* `cpt-chat-engine-fr-share-session` - Generate token, recipients view and branch
+* `cpt-chat-engine-usecase-share-session` - Full use case for sharing
 
 **Design Elements**:
-* `fdd-chat-engine-entity-share-token` - Cryptographic token, session mapping, metadata
-* `fdd-chat-engine-db-table-share-tokens` - ShareToken table with constraints
+* `cpt-chat-engine-entity-share-token` - Cryptographic token, session mapping, metadata
+* `cpt-chat-engine-db-table-share-tokens` - ShareToken table with constraints
 * Sequence diagram S10 (Share Session)
 
 **Related ADRs**:

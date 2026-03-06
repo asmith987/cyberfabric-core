@@ -4,7 +4,7 @@
 
 **Status**: accepted
 
-**ID**: `fdd-chat-engine-adr-message-variants`
+**ID**: `cpt-chat-engine-adr-message-variants`
 
 ## Context and Problem Statement
 
@@ -47,17 +47,17 @@ Chosen option: "variant_index + is_active flags", because it provides determinis
 ## Related Design Elements
 
 **Actors**:
-* `fdd-chat-engine-actor-client` - Navigates variants, requests position metadata
-* `fdd-chat-engine-message-processing` - Assigns variant_index, manages is_active
+* `cpt-chat-engine-actor-client` - Navigates variants, requests position metadata
+* `cpt-chat-engine-message-processing` - Assigns variant_index, manages is_active
 
 **Requirements**:
-* `fdd-chat-engine-fr-recreate-response` - Creates new variant with incremented variant_index
-* `fdd-chat-engine-fr-navigate-variants` - Query siblings, return position metadata
-* `fdd-chat-engine-nfr-data-integrity` - Unique constraint on (session_id, parent_message_id, variant_index)
+* `cpt-chat-engine-fr-recreate-response` - Creates new variant with incremented variant_index
+* `cpt-chat-engine-fr-navigate-variants` - Query siblings, return position metadata
+* `cpt-chat-engine-nfr-data-integrity` - Unique constraint on (session_id, parent_message_id, variant_index)
 
 **Design Elements**:
-* `fdd-chat-engine-entity-message` - variant_index and is_active fields
-* `fdd-chat-engine-db-table-messages` - Unique constraint enforcing variant integrity
+* `cpt-chat-engine-entity-message` - variant_index and is_active fields
+* `cpt-chat-engine-db-table-messages` - Unique constraint enforcing variant integrity
 
 **Related ADRs**:
 * ADR-0001 (Message Tree Structure) - Variants are siblings in tree

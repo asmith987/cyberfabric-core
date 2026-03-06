@@ -4,7 +4,7 @@
 
 **Status**: accepted
 
-**ID**: `fdd-chat-engine-adr-message-tree-structure`
+**ID**: `cpt-chat-engine-adr-message-tree-structure`
 
 ## Context and Problem Statement
 
@@ -44,19 +44,19 @@ Chosen option: "Immutable tree with parent_message_id", because it provides natu
 ## Related Design Elements
 
 **Actors**:
-* `fdd-chat-engine-actor-client` - Navigates message tree and requests branching operations
-* `fdd-chat-engine-actor-webhook-backend` - Receives truncated history based on tree traversal
+* `cpt-chat-engine-actor-client` - Navigates message tree and requests branching operations
+* `cpt-chat-engine-actor-backend-plugin` - Receives truncated history based on tree traversal
 
 **Requirements**:
-* `fdd-chat-engine-fr-recreate-response` - Variants created as siblings with same parent_message_id
-* `fdd-chat-engine-fr-branch-message` - New messages reference historical message as parent
-* `fdd-chat-engine-fr-navigate-variants` - Query siblings by parent_message_id for variant navigation
-* `fdd-chat-engine-nfr-data-integrity` - Database constraints enforce tree structure integrity
+* `cpt-chat-engine-fr-recreate-response` - Variants created as siblings with same parent_message_id
+* `cpt-chat-engine-fr-branch-message` - New messages reference historical message as parent
+* `cpt-chat-engine-fr-navigate-variants` - Query siblings by parent_message_id for variant navigation
+* `cpt-chat-engine-nfr-data-integrity` - Database constraints enforce tree structure integrity
 
 **Design Elements**:
-* `fdd-chat-engine-entity-message` - Core entity implementing tree structure
-* `fdd-chat-engine-principle-immutable-tree` - Design principle mandating immutability
-* `fdd-chat-engine-design-context-tree-traversal` - Implementation details for traversal queries
+* `cpt-chat-engine-entity-message` - Core entity implementing tree structure
+* `cpt-chat-engine-principle-immutable-tree` - Design principle mandating immutability
+* `cpt-chat-engine-design-context-tree-traversal` - Implementation details for traversal queries
 
 **Related ADRs**:
 * ADR-0014 (Message Variants with Index and Active Flag) - Depends on this tree structure

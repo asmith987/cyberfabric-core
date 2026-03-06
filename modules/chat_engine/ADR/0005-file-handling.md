@@ -4,7 +4,7 @@
 
 **Status**: accepted
 
-**ID**: `fdd-chat-engine-adr-file-handling`
+**ID**: `cpt-chat-engine-adr-file-handling`
 
 ## Context and Problem Statement
 
@@ -74,19 +74,19 @@ Chosen option: "Separate File Storage service with UUID identifiers", because it
 ## Related Design Elements
 
 **Actors**:
-* `fdd-chat-engine-actor-file-storage` - Separate File Storage service managing file uploads, UUID-based retrieval, and signed URL generation
-* `fdd-chat-engine-actor-client` - Uploads files to storage, receives UUIDs, includes UUIDs in messages
-* `fdd-chat-engine-actor-webhook-backend` - Fetches files from File Storage Service using UUIDs
+* `cpt-chat-engine-actor-file-storage` - Separate File Storage service managing file uploads, UUID-based retrieval, and signed URL generation
+* `cpt-chat-engine-actor-client` - Uploads files to storage, receives UUIDs, includes UUIDs in messages
+* `cpt-chat-engine-actor-backend-plugin` - Fetches files from File Storage Service using UUIDs
 
 **Requirements**:
-* `fdd-chat-engine-fr-attach-files` - Messages support file_ids array field (UUIDs)
-* `fdd-chat-engine-nfr-file-size` - Limits enforced by storage service, not Chat Engine
-* `fdd-chat-engine-nfr-response-time` - File handling off critical path
+* `cpt-chat-engine-fr-attach-files` - Messages support file_ids array field (UUIDs)
+* `cpt-chat-engine-nfr-file-size` - Limits enforced by storage service, not Chat Engine
+* `cpt-chat-engine-nfr-response-time` - File handling off critical path
 
 **Design Elements**:
-* `fdd-chat-engine-entity-message` - Contains file_ids (UUID array) not file content or URLs
-* `fdd-chat-engine-constraint-external-storage` - Design constraint mandating separate File Storage service
-* `fdd-chat-engine-design-context-file-storage` - Implementation details for UUID-based file access
+* `cpt-chat-engine-entity-message` - Contains file_ids (UUID array) not file content or URLs
+* `cpt-chat-engine-constraint-external-storage` - Design constraint mandating separate File Storage service
+* `cpt-chat-engine-design-context-file-storage` - Implementation details for UUID-based file access
 
 **Related ADRs**:
 * ADR-0006 (Webhook Protocol) - File URLs forwarded to backends in message payload

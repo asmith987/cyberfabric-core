@@ -4,7 +4,7 @@
 
 **Status**: accepted
 
-**ID**: `fdd-chat-engine-adr-streaming-cancellation`
+**ID**: `cpt-chat-engine-adr-streaming-cancellation`
 
 ## Context and Problem Statement
 
@@ -45,16 +45,16 @@ Chosen option: "Close HTTP connection", because it provides immediate cancellati
 ## Related Design Elements
 
 **Actors**:
-* `fdd-chat-engine-actor-client` - Closes HTTP connection on user action
-* `fdd-chat-engine-response-streaming` - Detects connection close, saves partial response
-* `fdd-chat-engine-webhook-integration` - Cancels HTTP request to backend
+* `cpt-chat-engine-actor-client` - Closes HTTP connection on user action
+* `cpt-chat-engine-response-streaming` - Detects connection close, saves partial response
+* `cpt-chat-engine-webhook-integration` - Cancels HTTP request to backend
 
 **Requirements**:
-* `fdd-chat-engine-fr-stop-streaming` - Cancel streaming, save partial response with incomplete flag
-* `fdd-chat-engine-nfr-streaming` - Minimal latency for cancellation response
+* `cpt-chat-engine-fr-stop-streaming` - Cancel streaming, save partial response with incomplete flag
+* `cpt-chat-engine-nfr-streaming` - Minimal latency for cancellation response
 
 **Design Elements**:
-* `fdd-chat-engine-entity-message` - is_complete field indicates cancelled messages
+* `cpt-chat-engine-entity-message` - is_complete field indicates cancelled messages
 * HTTP connection close mechanism (Section 3.3.1 of DESIGN.md)
 * Sequence diagram S11 (Stop Streaming Response)
 

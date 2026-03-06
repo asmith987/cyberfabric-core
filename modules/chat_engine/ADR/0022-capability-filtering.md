@@ -4,7 +4,7 @@
 
 **Status**: accepted
 
-**ID**: `fdd-chat-engine-adr-capability-filtering`
+**ID**: `cpt-chat-engine-adr-capability-filtering`
 
 ## Context and Problem Statement
 
@@ -47,18 +47,18 @@ Chosen option: "enabled_capabilities array per message", because it provides per
 ## Related Design Elements
 
 **Actors**:
-* `fdd-chat-engine-actor-client` - Sends `CapabilityValue[]` per message
-* `fdd-chat-engine-actor-webhook-backend` - Receives `CapabilityValue[]`, optimizes processing accordingly
+* `cpt-chat-engine-actor-client` - Sends `CapabilityValue[]` per message
+* `cpt-chat-engine-actor-backend-plugin` - Receives `CapabilityValue[]`, optimizes processing accordingly
 
 **Design Elements**:
 * Chat Engine validates `CapabilityValue.id` against session's `enabled_capabilities` and value type against `Capability.type`
 
 **Requirements**:
-* `fdd-chat-engine-fr-send-message` - Message includes `enabled_capabilities: CapabilityValue[]`
-* `fdd-chat-engine-fr-create-session` - Session stores `enabled_capabilities: Capability[]`
+* `cpt-chat-engine-fr-send-message` - Message includes `enabled_capabilities: CapabilityValue[]`
+* `cpt-chat-engine-fr-create-session` - Session stores `enabled_capabilities: Capability[]`
 
 **Design Elements**:
-* `fdd-chat-engine-entity-session` - `enabled_capabilities: Capability[]` (authoritative type registry)
+* `cpt-chat-engine-entity-session` - `enabled_capabilities: Capability[]` (authoritative type registry)
 * HTTP POST /messages/send — `enabled_capabilities: CapabilityValue[]`
 * Webhook `message.new` event — `enabled_capabilities: CapabilityValue[]`
 

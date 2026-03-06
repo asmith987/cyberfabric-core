@@ -4,7 +4,7 @@
 
 **Status**: accepted
 
-**ID**: `fdd-chat-engine-adr-session-metadata`
+**ID**: `cpt-chat-engine-adr-session-metadata`
 
 ## Context and Problem Statement
 
@@ -49,16 +49,16 @@ Chosen option: "JSONB metadata column", because it enables schema-free extensibi
 ## Related Design Elements
 
 **Actors**:
-* `fdd-chat-engine-actor-client` - Sets session metadata (title, tags, custom fields)
-* `fdd-chat-engine-session-management` - Manages metadata updates
+* `cpt-chat-engine-actor-client` - Sets session metadata (title, tags, custom fields)
+* `cpt-chat-engine-session-management` - Manages metadata updates
 
 **Requirements**:
-* `fdd-chat-engine-fr-search-sessions` - Search includes session metadata (title, tags)
-* `fdd-chat-engine-fr-session-summary` - Summary stored in metadata
+* `cpt-chat-engine-fr-search-sessions` - Search includes session metadata (title, tags)
+* `cpt-chat-engine-fr-session-summary` - Summary stored in metadata
 
 **Design Elements**:
-* `fdd-chat-engine-entity-session` - metadata field (JSONB)
-* `fdd-chat-engine-db-table-sessions` - metadata column with GIN index
+* `cpt-chat-engine-entity-session` - metadata field (JSONB)
+* `cpt-chat-engine-db-table-sessions` - metadata column with GIN index
 * HTTP GET /sessions/{id} returns metadata
 
 **Related ADRs**:
