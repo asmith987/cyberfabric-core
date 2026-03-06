@@ -20,6 +20,8 @@ pub enum PluginError {
     #[error("request rejected: {0}")]
     #[allow(dead_code)] // Part of plugin trait API; no current plugin constructs this.
     Rejected(String),
+    #[error("invalid plugin configuration: {0}")]
+    InvalidConfig(String),
     #[error("plugin error: {0}")]
     Internal(String),
 }

@@ -61,7 +61,8 @@ allow = [
   "CDLA-Permissive-2.0",
   "MPL-2.0",
   "OpenSSL",
-  "Zlib"
+  "Zlib",
+  "CC0-1.0"
 ]
 
 # Confidence threshold (0.0..1.0) for license text detection

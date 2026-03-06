@@ -107,6 +107,8 @@ impl AppHarnessBuilder {
             dp_builder = dp_builder.with_max_body_size(size);
         }
         dp_builder = dp_builder.with_skip_upstream_tls_verify(self.skip_upstream_tls_verify);
+        dp_builder =
+            dp_builder.with_token_http_config(modkit_http::HttpClientConfig::for_testing());
 
         let app_state = build_test_app_state(&hub, cp_builder, dp_builder);
 

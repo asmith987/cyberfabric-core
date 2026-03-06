@@ -1,7 +1,7 @@
 use http::{Method, StatusCode};
 use oagw::test_support::{
     APIKEY_AUTH_PLUGIN_ID, AppHarness, MockBody, MockGuard, MockResponse, MockUpstream,
-    parse_resource_gts,
+    OAUTH2_CLIENT_CRED_AUTH_PLUGIN_ID, parse_resource_gts,
 };
 use oagw_sdk::Body;
 use oagw_sdk::api::ErrorSource;
@@ -1692,4 +1692,225 @@ async fn proxy_streaming_body_exceeding_limit_returns_413() {
             resp.status()
         ),
     }
+}
+
+// ---------------------------------------------------------------------------
+// OAuth2 Client Credentials integration tests
+// ---------------------------------------------------------------------------
+
+/// 9.5: OAuth2 CC happy path — token fetched from mock IdP, injected as Bearer.
+#[tokio::test]
+async fn proxy_oauth2_client_cred_injects_bearer_token() {
+    let mut guard = MockGuard::new();
+
+    // Mock token endpoint on the same shared mock server.
+    guard.mock(
+        "POST",
+        "/oauth/token",
+        MockResponse {
+            status: 200,
+            headers: vec![("content-type".into(), "application/json".into())],
+            body: MockBody::Json(
+                json!({"access_token":"tok-oauth2-test","expires_in":3600,"token_type":"Bearer"}),
+            ),
+        },
+    );
+
+    // Mock upstream API endpoint.
+    guard.mock(
+        "GET",
+        "/api/resource",
+        MockResponse {
+            status: 200,
+            headers: vec![("content-type".into(), "application/json".into())],
+            body: MockBody::Json(json!({"status":"ok"})),
+        },
+    );
+
+    let h = AppHarness::builder()
+        .with_credentials(vec![
+            ("cred://oauth2-client-id".into(), "test-id".into()),
+            ("cred://oauth2-client-secret".into(), "test-secret".into()),
+        ])
+        .build()
+        .await;
+    let ctx = h.security_context().clone();
+
+    let upstream = h
+        .facade()
+        .create_upstream(
+            ctx.clone(),
+            CreateUpstreamRequest::builder(
+                Server {
+                    endpoints: vec![Endpoint {
+                        scheme: Scheme::Http,
+                        host: "127.0.0.1".into(),
+                        port: h.mock_port(),
+                    }],
+                },
+                "gts.x.core.oagw.protocol.v1~x.core.oagw.http.v1",
+            )
+            .alias("oauth2-test")
+            .auth(oagw_sdk::AuthConfig {
+                plugin_type: OAUTH2_CLIENT_CRED_AUTH_PLUGIN_ID.into(),
+                sharing: SharingMode::Private,
+                config: Some(
+                    [
+                        (
+                            "token_endpoint".into(),
+                            format!(
+                                "http://127.0.0.1:{}{}",
+                                h.mock_port(),
+                                guard.path("/oauth/token")
+                            ),
+                        ),
+                        ("client_id_ref".into(), "cred://oauth2-client-id".into()),
+                        (
+                            "client_secret_ref".into(),
+                            "cred://oauth2-client-secret".into(),
+                        ),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            })
+            .build(),
+        )
+        .await
+        .unwrap();
+
+    h.facade()
+        .create_route(
+            ctx.clone(),
+            CreateRouteRequest::builder(
+                upstream.id,
+                MatchRules {
+                    http: Some(HttpMatch {
+                        methods: vec![HttpMethod::Get],
+                        path: guard.path("/api/resource"),
+                        query_allowlist: vec![],
+                        path_suffix_mode: PathSuffixMode::Disabled,
+                    }),
+                    grpc: None,
+                },
+            )
+            .build(),
+        )
+        .await
+        .unwrap();
+
+    let req = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!("/oauth2-test{}", guard.path("/api/resource")))
+        .body(Body::Empty)
+        .unwrap();
+    let response = h.facade().proxy_request(ctx, req).await.unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Verify the upstream received the Bearer token from the OAuth2 flow.
+    let recorded = guard.recorded_requests().await;
+    let api_request = recorded
+        .iter()
+        .find(|r| r.uri.contains("/api/resource"))
+        .expect("upstream API request not found");
+    let auth_header = api_request
+        .headers
+        .iter()
+        .find(|(k, _)| k == "authorization")
+        .map(|(_, v)| v.as_str())
+        .expect("authorization header missing");
+    assert_eq!(auth_header, "Bearer tok-oauth2-test");
+}
+
+/// 9.5: OAuth2 CC with missing credentials — credstore returns not found.
+#[tokio::test]
+async fn proxy_oauth2_missing_credentials_returns_error() {
+    let mut guard = MockGuard::new();
+    guard.mock(
+        "GET",
+        "/api/resource",
+        MockResponse {
+            status: 200,
+            headers: vec![],
+            body: MockBody::Json(json!({"status":"ok"})),
+        },
+    );
+
+    // No credentials loaded for the OAuth2 refs.
+    let h = AppHarness::builder().build().await;
+    let ctx = h.security_context().clone();
+
+    let upstream = h
+        .facade()
+        .create_upstream(
+            ctx.clone(),
+            CreateUpstreamRequest::builder(
+                Server {
+                    endpoints: vec![Endpoint {
+                        scheme: Scheme::Http,
+                        host: "127.0.0.1".into(),
+                        port: h.mock_port(),
+                    }],
+                },
+                "gts.x.core.oagw.protocol.v1~x.core.oagw.http.v1",
+            )
+            .alias("oauth2-missing-creds")
+            .auth(oagw_sdk::AuthConfig {
+                plugin_type: OAUTH2_CLIENT_CRED_AUTH_PLUGIN_ID.into(),
+                sharing: SharingMode::Private,
+                config: Some(
+                    [
+                        (
+                            "token_endpoint".into(),
+                            format!(
+                                "http://127.0.0.1:{}{}",
+                                h.mock_port(),
+                                guard.path("/oauth/token")
+                            ),
+                        ),
+                        ("client_id_ref".into(), "cred://missing-id".into()),
+                        ("client_secret_ref".into(), "cred://missing-secret".into()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+            })
+            .build(),
+        )
+        .await
+        .unwrap();
+
+    h.facade()
+        .create_route(
+            ctx.clone(),
+            CreateRouteRequest::builder(
+                upstream.id,
+                MatchRules {
+                    http: Some(HttpMatch {
+                        methods: vec![HttpMethod::Get],
+                        path: guard.path("/api/resource"),
+                        query_allowlist: vec![],
+                        path_suffix_mode: PathSuffixMode::Disabled,
+                    }),
+                    grpc: None,
+                },
+            )
+            .build(),
+        )
+        .await
+        .unwrap();
+
+    let req = http::Request::builder()
+        .method(Method::GET)
+        .uri(format!(
+            "/oauth2-missing-creds{}",
+            guard.path("/api/resource")
+        ))
+        .body(Body::Empty)
+        .unwrap();
+    let response = h.facade().proxy_request(ctx, req).await;
+
+    // Should fail with a secret-not-found error.
+    assert!(response.is_err());
 }

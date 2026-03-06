@@ -16,6 +16,7 @@ use pingora_proxy::HttpProxy;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::watch;
 
+use crate::config::TokenCacheConfig;
 use crate::domain::error::DomainError;
 use crate::domain::model::{Endpoint, PassthroughMode, PathSuffixMode, Scheme, Upstream};
 use crate::domain::plugin::AuthContext;
@@ -59,10 +60,13 @@ impl DataPlaneServiceImpl {
         cp: Arc<dyn ControlPlaneService>,
         credstore: Arc<dyn CredStoreClientV1>,
         policy_enforcer: PolicyEnforcer,
+        token_http_config: Option<modkit_http::HttpClientConfig>,
+        token_cache_config: TokenCacheConfig,
         backend_selector: Arc<dyn EndpointSelector>,
         proxy: Arc<HttpProxy<PingoraProxy>>,
     ) -> Self {
-        let auth_registry = AuthPluginRegistry::with_builtins(credstore);
+        let auth_registry =
+            AuthPluginRegistry::with_builtins(credstore, token_http_config, token_cache_config);
         let rate_limiter = RateLimiter::new();
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
@@ -351,7 +355,8 @@ impl DataPlaneService for DataPlaneServiceImpl {
                             instance: instance_uri.clone(),
                         }
                     }
-                    crate::domain::plugin::PluginError::Rejected(ref msg) => {
+                    crate::domain::plugin::PluginError::Rejected(ref msg)
+                    | crate::domain::plugin::PluginError::InvalidConfig(ref msg) => {
                         DomainError::Validation {
                             detail: msg.clone(),
                             instance: instance_uri.clone(),
@@ -867,7 +872,15 @@ mod tests {
             pingora,
         ));
 
-        DataPlaneServiceImpl::new(cp, credstore, policy_enforcer, selector, proxy)
+        DataPlaneServiceImpl::new(
+            cp,
+            credstore,
+            policy_enforcer,
+            None,
+            TokenCacheConfig::default(),
+            selector,
+            proxy,
+        )
     }
 
     // P2 #12: Alias extraction happens on raw path, then suffix is normalized.
