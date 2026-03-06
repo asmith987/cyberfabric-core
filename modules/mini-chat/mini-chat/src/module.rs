@@ -13,8 +13,13 @@ use types_registry_sdk::{RegisterResult, TypesRegistryClient};
 use crate::api::rest::routes;
 use crate::domain::service::{AppServices as GenericAppServices, Repositories};
 
-pub(crate) type AppServices =
-    GenericAppServices<TurnRepository, MessageRepository, QuotaUsageRepository, ChatRepository>;
+pub(crate) type AppServices = GenericAppServices<
+    TurnRepository,
+    MessageRepository,
+    QuotaUsageRepository,
+    ReactionRepository,
+    ChatRepository,
+>;
 use crate::infra::db::repo::attachment_repo::AttachmentRepository;
 use crate::infra::db::repo::chat_repo::ChatRepository;
 use crate::infra::db::repo::message_repo::MessageRepository;
@@ -123,7 +128,10 @@ impl Module for MiniChatModule {
                 max: 100,
             })),
             attachment: Arc::new(AttachmentRepository),
-            message: Arc::new(MessageRepository),
+            message: Arc::new(MessageRepository::new(modkit_db::odata::LimitCfg {
+                default: 20,
+                max: 100,
+            })),
             quota: Arc::new(QuotaUsageRepository),
             turn: Arc::new(TurnRepository),
             reaction: Arc::new(ReactionRepository),

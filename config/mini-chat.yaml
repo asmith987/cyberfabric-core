@@ -112,16 +112,40 @@ modules:
           tier: Premium
           global_enabled: true
           is_default: true
+          input_tokens_credit_multiplier_micro: 3000000
+          output_tokens_credit_multiplier_micro: 15000000
+          multimodal_capabilities: ["VISION_INPUT"]
+          context_window: 128000
+          max_output_tokens: 8192
+          description: "Most capable model"
+          provider_display_name: "OpenAI"
+          multiplier_display: "3x"
         - model_id: "gpt-5-mini"
           display_name: "GPT-5 Mini"
           tier: Standard
           global_enabled: true
           is_default: false
+          input_tokens_credit_multiplier_micro: 1000000
+          output_tokens_credit_multiplier_micro: 3000000
+          multimodal_capabilities: []
+          context_window: 128000
+          max_output_tokens: 4096
+          description: "Fast and efficient model"
+          provider_display_name: "OpenAI"
+          multiplier_display: "1x"
         - model_id: "gpt-5-nano"
           display_name: "GPT-5 Nano"
           tier: Standard
           global_enabled: true
           is_default: false
+          input_tokens_credit_multiplier_micro: 500000
+          output_tokens_credit_multiplier_micro: 1500000
+          multimodal_capabilities: []
+          context_window: 64000
+          max_output_tokens: 4096
+          description: "Lightweight and fast model"
+          provider_display_name: "OpenAI"
+          multiplier_display: "0.5x"
 
 tracing:
   enabled: false

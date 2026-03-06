@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use modkit_db::DBProvider;
+use modkit_db::odata::LimitCfg;
 use modkit_security::AccessScope;
 use sea_orm::ActiveEnum;
 use uuid::Uuid;
@@ -24,6 +25,13 @@ type Db = Arc<DBProvider<modkit_db::DbError>>;
 
 fn scope() -> AccessScope {
     AccessScope::allow_all()
+}
+
+fn limit_cfg() -> LimitCfg {
+    LimitCfg {
+        default: 20,
+        max: 100,
+    }
 }
 
 async fn test_db() -> Db {
@@ -405,7 +413,7 @@ async fn cas_update_completed_sets_assistant_message_id() {
         .expect("create_turn");
 
     // Insert an assistant message (required by FK on assistant_message_id)
-    let msg_repo = MessageRepository;
+    let msg_repo = MessageRepository::new(limit_cfg());
     let msg_id = Uuid::new_v4();
     msg_repo
         .insert_assistant_message(
@@ -554,7 +562,7 @@ async fn insert_user_message_round_trip() {
     let chat_id = Uuid::new_v4();
     insert_chat(&db, tenant_id, chat_id).await;
 
-    let repo = MessageRepository;
+    let repo = MessageRepository::new(limit_cfg());
     let conn = db.conn().unwrap();
     let request_id = Uuid::new_v4();
 
@@ -586,7 +594,7 @@ async fn insert_assistant_message_with_usage() {
     let chat_id = Uuid::new_v4();
     insert_chat(&db, tenant_id, chat_id).await;
 
-    let repo = MessageRepository;
+    let repo = MessageRepository::new(limit_cfg());
     let conn = db.conn().unwrap();
     let request_id = Uuid::new_v4();
 
@@ -622,7 +630,7 @@ async fn find_messages_by_chat_and_request_id() {
     let chat_id = Uuid::new_v4();
     insert_chat(&db, tenant_id, chat_id).await;
 
-    let repo = MessageRepository;
+    let repo = MessageRepository::new(limit_cfg());
     let conn = db.conn().unwrap();
     let request_id = Uuid::new_v4();
 
@@ -676,7 +684,7 @@ async fn duplicate_user_message_rejected() {
     let chat_id = Uuid::new_v4();
     insert_chat(&db, tenant_id, chat_id).await;
 
-    let repo = MessageRepository;
+    let repo = MessageRepository::new(limit_cfg());
     let conn = db.conn().unwrap();
     let request_id = Uuid::new_v4();
 

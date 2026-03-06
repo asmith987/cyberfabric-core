@@ -54,3 +54,66 @@ pub struct NewChat {
 pub struct ChatPatch {
     pub title: Option<Option<String>>,
 }
+
+// ── Message ──
+
+/// A chat message as returned by the list endpoint.
+#[domain_model]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Message {
+    pub id: Uuid,
+    pub request_id: Uuid,
+    pub role: String,
+    pub content: String,
+    pub attachment_ids: Vec<Uuid>,
+    pub model: Option<String>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub created_at: OffsetDateTime,
+}
+
+// ── Reaction ──
+
+/// Binary like/dislike reaction value.
+#[domain_model]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReactionKind {
+    Like,
+    Dislike,
+}
+
+impl ReactionKind {
+    /// Parse from a string value ("like" / "dislike").
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "like" => Some(Self::Like),
+            "dislike" => Some(Self::Dislike),
+            _ => None,
+        }
+    }
+
+    /// Wire representation used in DB and REST.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Like => "like",
+            Self::Dislike => "dislike",
+        }
+    }
+}
+
+impl std::fmt::Display for ReactionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// A reaction on an assistant message.
+#[domain_model]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reaction {
+    pub message_id: Uuid,
+    pub kind: ReactionKind,
+    pub created_at: OffsetDateTime,
+}

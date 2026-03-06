@@ -1053,7 +1053,10 @@ mod tests {
         StreamService::new(
             db,
             Arc::new(TurnRepo),
-            Arc::new(MsgRepo),
+            Arc::new(MsgRepo::new(modkit_db::odata::LimitCfg {
+                default: 20,
+                max: 100,
+            })),
             Arc::new(OrmChatRepo::new(modkit_db::odata::LimitCfg {
                 default: 20,
                 max: 100,

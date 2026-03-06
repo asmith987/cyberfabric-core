@@ -974,17 +974,10 @@
         "operationId": "removeReaction",
         "tags": ["reactions"],
         "summary": "Remove reaction from an assistant message",
-        "description": "Removes the current user's reaction from an assistant message. Idempotent: returns 200 even if no reaction exists.",
+        "description": "Removes the current user's reaction from an assistant message. Idempotent: returns 204 whether or not a reaction existed.",
         "responses": {
-          "200": {
-            "description": "Reaction removed (or was already absent).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReactionDeleteResponse"
-                }
-              }
-            }
+          "204": {
+            "description": "Reaction removed (or was already absent)."
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
@@ -1492,20 +1485,6 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
-          }
-        }
-      },
-      "ReactionDeleteResponse": {
-        "type": "object",
-        "required": ["message_id", "deleted"],
-        "properties": {
-          "message_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "deleted": {
-            "type": "boolean",
-            "const": true
           }
         }
       },

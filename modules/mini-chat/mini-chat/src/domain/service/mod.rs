@@ -16,6 +16,7 @@ use crate::infra::llm::LlmProvider;
 mod attachment_service;
 mod chat_service;
 pub(crate) mod credit_arithmetic;
+mod message_service;
 mod model_service;
 mod quota_service;
 mod reaction_service;
@@ -26,6 +27,7 @@ pub(crate) mod token_estimator;
 
 pub(crate) use attachment_service::AttachmentService;
 pub(crate) use chat_service::ChatService;
+pub(crate) use message_service::MessageService;
 pub(crate) use model_service::ModelService;
 pub(crate) use quota_service::QuotaService;
 pub(crate) use reaction_service::ReactionService;
@@ -66,9 +68,9 @@ pub(crate) mod actions {
     pub const RETRY_TURN: &str = "retry_turn";
     pub const EDIT_TURN: &str = "edit_turn";
     pub const DELETE_TURN: &str = "delete_turn";
-    pub const UPLOAD: &str = "upload";
+    pub const UPLOAD_ATTACHMENT: &str = "upload_attachment";
     pub const READ_ATTACHMENT: &str = "read_attachment";
-    pub const REACT: &str = "react";
+    pub const SET_REACTION: &str = "set_reaction";
     pub const DELETE_REACTION: &str = "delete_reaction";
 }
 
@@ -78,6 +80,7 @@ pub(crate) struct Repositories<
     TR: TurnRepository,
     MR: MessageRepository,
     QR: QuotaUsageRepository,
+    RR: ReactionRepository,
     CR: ChatRepository,
 > {
     pub(crate) chat: Arc<CR>,
@@ -85,7 +88,7 @@ pub(crate) struct Repositories<
     pub(crate) message: Arc<MR>,
     pub(crate) quota: Arc<QR>,
     pub(crate) turn: Arc<TR>,
-    pub(crate) reaction: Arc<dyn ReactionRepository>,
+    pub(crate) reaction: Arc<RR>,
     pub(crate) model_pref: Arc<dyn ModelPrefRepository>,
     pub(crate) thread_summary: Arc<dyn ThreadSummaryRepository>,
     pub(crate) vector_store: Arc<dyn VectorStoreRepository>,
@@ -102,11 +105,13 @@ pub(crate) struct AppServices<
     TR: TurnRepository + 'static,
     MR: MessageRepository + 'static,
     QR: QuotaUsageRepository + 'static,
+    RR: ReactionRepository + 'static,
     CR: ChatRepository + 'static,
 > {
     pub(crate) chats: ChatService<CR>,
+    pub(crate) messages: MessageService<MR, CR>,
     pub(crate) stream: StreamService<TR, MR, CR>,
-    pub(crate) reactions: ReactionService<CR>,
+    pub(crate) reactions: ReactionService<RR, MR, CR>,
     pub(crate) attachments: AttachmentService<CR>,
     pub(crate) models: ModelService,
     pub(crate) quota: QuotaService<QR>,
@@ -116,12 +121,13 @@ impl<
     TR: TurnRepository + 'static,
     MR: MessageRepository + 'static,
     QR: QuotaUsageRepository + 'static,
+    RR: ReactionRepository + 'static,
     CR: ChatRepository + 'static,
-> AppServices<TR, MR, QR, CR>
+> AppServices<TR, MR, QR, RR, CR>
 {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
-        repos: &Repositories<TR, MR, QR, CR>,
+        repos: &Repositories<TR, MR, QR, RR, CR>,
         db: Arc<DbProvider>,
         authz: Arc<dyn AuthZResolverClient>,
         model_resolver: Arc<dyn ModelResolver>,
@@ -142,6 +148,12 @@ impl<
                 enforcer.clone(),
                 model_resolver,
             ),
+            messages: MessageService::new(
+                Arc::clone(&db),
+                Arc::clone(&repos.message),
+                Arc::clone(&repos.chat),
+                enforcer.clone(),
+            ),
             stream: StreamService::new(
                 Arc::clone(&db),
                 Arc::clone(&repos.turn),
@@ -154,6 +166,7 @@ impl<
             reactions: ReactionService::new(
                 Arc::clone(&db),
                 Arc::clone(&repos.reaction),
+                Arc::clone(&repos.message),
                 Arc::clone(&repos.chat),
                 enforcer.clone(),
             ),

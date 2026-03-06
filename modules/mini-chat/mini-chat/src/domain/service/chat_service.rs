@@ -125,7 +125,8 @@ impl<CR: ChatRepository + 'static> ChatService<CR> {
             .await?
             .ok_or_else(|| DomainError::chat_not_found(id))?;
 
-        let message_count = self.chat_repo.count_messages(&conn, &scope, id).await?;
+        let msg_scope = scope.tenant_only();
+        let message_count = self.chat_repo.count_messages(&conn, &msg_scope, id).await?;
 
         tracing::debug!("Successfully retrieved chat");
         Ok(Self::to_detail(chat, message_count))
@@ -149,13 +150,14 @@ impl<CR: ChatRepository + 'static> ChatService<CR> {
 
         let page = self.chat_repo.list_page(&conn, &scope, query).await?;
 
-        // Batch count: single GROUP BY query for all chat IDs
+        // Batch count: single GROUP BY query for all chat IDs.
+        let msg_scope = scope.tenant_only();
         let chat_ids: Vec<Uuid> = page.items.iter().map(|c| c.id).collect();
         let counts = if chat_ids.is_empty() {
             std::collections::HashMap::new()
         } else {
             self.chat_repo
-                .count_messages_batch(&conn, &scope, &chat_ids)
+                .count_messages_batch(&conn, &msg_scope, &chat_ids)
                 .await?
         };
 
@@ -216,8 +218,9 @@ impl<CR: ChatRepository + 'static> ChatService<CR> {
                     chat.updated_at = OffsetDateTime::now_utc();
 
                     let updated = chat_repo.update(tx, &scope, chat).await.map_err(map)?;
+                    let msg_scope = scope.tenant_only();
                     let message_count = chat_repo
-                        .count_messages(tx, &scope, id)
+                        .count_messages(tx, &msg_scope, id)
                         .await
                         .map_err(map)?;
 

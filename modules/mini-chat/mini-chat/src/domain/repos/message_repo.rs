@@ -60,4 +60,23 @@ pub trait MessageRepository: Send + Sync {
         chat_id: Uuid,
         request_id: Uuid,
     ) -> Result<Vec<MessageModel>, DomainError>;
+
+    /// SELECT a single message by `(id, chat_id)` where not deleted.
+    async fn get_by_chat<C: DBRunner>(
+        &self,
+        runner: &C,
+        scope: &AccessScope,
+        msg_id: Uuid,
+        chat_id: Uuid,
+    ) -> Result<Option<MessageModel>, DomainError>;
+
+    /// List messages for a chat with cursor pagination + `OData` filter/sort.
+    /// Only returns messages with `request_id` IS NOT NULL and `deleted_at` IS NULL.
+    async fn list_by_chat<C: DBRunner>(
+        &self,
+        runner: &C,
+        scope: &AccessScope,
+        chat_id: Uuid,
+        query: &modkit_odata::ODataQuery,
+    ) -> Result<modkit_odata::Page<MessageModel>, DomainError>;
 }
