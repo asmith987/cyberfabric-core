@@ -13,7 +13,7 @@ The architecture emphasizes **separation of concerns**: Chat Engine handles pers
 **Key architectural decisions:**
 - **Message Tree Structure**: Messages form an immutable tree structure enabling conversation branching and variant preservation
 - **Streaming-First**: All plugin responses stream through Chat Engine to clients with minimal latency overhead
-- **Plugin-Driven Capabilities**: Session capabilities are provided by backend plugins via `on_session_type_configured()`, not hardcoded in Chat Engine
+- **Plugin-Driven Capabilities**: Session capabilities are provided by backend plugins via `on_session_created()`, not hardcoded in Chat Engine
 - **Stateless Routing**: Chat Engine instances can scale horizontally as all session state is persisted in the database
 - **Plugin System**: Backend plugins are internal code modules implementing `ChatEngineBackendPlugin` trait; each plugin is referenced by `plugin_instance_id` in session type config (`cpt-cf-chat-engine-adr-plugin-backend-integration`)
 
@@ -121,7 +121,7 @@ Once a message is created with a parent_message_id, that relationship is immutab
 <!-- fdd-id-content -->
 **ADRs**: `cpt-cf-chat-engine-adr-capability-model`, `cpt-cf-chat-engine-adr-plugin-backend-integration`, `cpt-cf-chat-engine-adr-llm-gateway-plugin`
 
-Backend plugins are code modules inside Chat Engine implementing the `ChatEngineBackendPlugin` trait. A session type references its plugin via `plugin_instance_id`. On `on_session_type_configured`, the plugin returns `Vec<Capability>` stored as `SessionType.available_capabilities`. On each message operation, Chat Engine calls the corresponding trait method and receives a `ResponseStream`. Plugins own all outbound communication — for example, the LLM gateway plugin makes HTTP requests to the LLM gateway service. Chat Engine does not interpret capability semantics, transport details, or external service protocols. Plugins may extend `SessionType.metadata` and `Message.metadata` with typed fields by registering GTS derived schemas — see `cpt-cf-chat-engine-adr-llm-gateway-plugin`.
+Backend plugins are code modules inside Chat Engine implementing the `ChatEngineBackendPlugin` trait. A session type references its plugin via `plugin_instance_id`. On `on_session_created`, the plugin resolves capabilities (e.g., by querying external services) and returns `Vec<Capability>` stored as `Session.enabled_capabilities`. On each message operation, Chat Engine calls the corresponding trait method and receives a `ResponseStream`. Plugins own all outbound communication — for example, the LLM gateway plugin makes HTTP requests to the Model Registry and LLM gateway service. Chat Engine does not interpret capability semantics, transport details, or external service protocols. Plugins may extend `SessionType.metadata` and `Message.metadata` with typed fields by registering GTS derived schemas — see `cpt-cf-chat-engine-adr-llm-gateway-plugin`.
 <!-- fdd-id-content -->
 
 #### Principle: Stream Everything
@@ -359,25 +359,38 @@ flowchart TB
         MobileClient[Mobile Client]
     end
 
-    ChatEngine[Chat Engine]
-
-    subgraph External Services
-        DB[(PostgreSQL)]
-        Storage[File Storage<br/>Service]
-        Plugin[Backend Plugin]
-        Summ[Summarization<br/>Service]
+    subgraph Chat Engine
+        Core[Core Service]
+        PluginRegistry[Plugin Registry]
+        LLMPlugin[LLM Gateway Plugin]
+        WebhookCompat[Webhook Compat Plugin]
     end
 
-    WebClient -.HTTP.-> ChatEngine
-    MobileClient -.HTTP.-> ChatEngine
+    subgraph Infrastructure
+        DB[(PostgreSQL)]
+        Storage[File Storage<br/>Service]
+    end
 
-    ChatEngine --> DB
-    ChatEngine --> Webhook
-    ChatEngine --> Storage
-    ChatEngine --> Summ
+    subgraph External Services
+        LLMGateway[LLM Gateway<br/>Service]
+        LegacyBackend[Legacy HTTP<br/>Backend]
+    end
 
-    ChatEngine -.HTTP chunks.-> WebClient
-    ChatEngine -.HTTP chunks.-> MobileClient
+    WebClient -.HTTP.-> Core
+    MobileClient -.HTTP.-> Core
+
+    Core --> PluginRegistry
+    PluginRegistry --> LLMPlugin
+    PluginRegistry --> WebhookCompat
+
+    LLMPlugin -.HTTP.-> LLMGateway
+    WebhookCompat -.HTTP.-> LegacyBackend
+
+    Core --> DB
+    Core --> Storage
+
+    Core -.HTTP chunks.-> WebClient
+    Core -.HTTP chunks.-> MobileClient
 ```
 
 **System Architecture**:
@@ -405,7 +418,7 @@ Chat Engine orchestrates message creation, persistence, and tree management. It 
 <!-- fdd-id-content -->
 **ADRs**: `cpt-cf-chat-engine-adr-routing-layer` (zero business logic), `cpt-cf-chat-engine-adr-plugin-backend-integration` (plugin system)
 
-Chat Engine's plugin invocation layer. Resolves `dyn ChatEngineBackendPlugin` by `plugin_instance_id`, constructs call context, and invokes plugin methods (`on_session_type_configured`, `on_session_created`, `on_message`, `on_message_recreate`, `on_session_summary`). Auth, retry, circuit breaker, and timeouts are the plugin's responsibility.
+Chat Engine's plugin invocation layer. Resolves `dyn ChatEngineBackendPlugin` by `plugin_instance_id`, constructs call context, and invokes plugin methods (`on_session_type_configured`, `on_session_created`, `on_session_updated`, `on_message`, `on_message_recreate`, `on_session_summary`). On `on_session_created` and `on_session_updated`, the plugin returns `Vec<Capability>` stored as `Session.enabled_capabilities`. Auth, retry, circuit breaker, and timeouts are the plugin's responsibility.
 
 **N:1 session type → plugin relationship**: Multiple differently-configured session types can share the same `plugin_instance_id`. The call context always includes `session_type_id` and `session_type_metadata` (the `metadata` JSON blob from the `session_types` table), allowing a single plugin instance to serve multiple session types with different behaviour (e.g., different configuration, different capability set, different processing strategy).
 <!-- fdd-id-content -->
@@ -486,11 +499,11 @@ Session lifecycle operations: create, delete, retrieve, type switching, share to
 
 Message tree management: creation, persistence, parent validation, variant_index assignment, tree constraints. **ADRs**: `cpt-cf-chat-engine-adr-message-tree-structure`, `cpt-cf-chat-engine-adr-message-variants`, `cpt-cf-chat-engine-adr-message-recreation`.
 
-#### Webhook Integration Module
+#### Plugin Integration Module
 
 - [ ] `p1` - **ID**: `cpt-cf-chat-engine-component-webhook-integration`
 
-HTTP client for webhook invocation: event payload construction, timeout handling, circuit breaker pattern. **ADRs**: `cpt-cf-chat-engine-adr-routing-layer`, `cpt-cf-chat-engine-adr-webhook-protocol`, `cpt-cf-chat-engine-adr-circuit-breaker`, `cpt-cf-chat-engine-adr-timeout-configuration`.
+Plugin registry and trait dispatch: resolves `dyn ChatEngineBackendPlugin` by `plugin_instance_id`, invokes trait methods (`on_session_created`, `on_session_updated`, `on_message`, etc.), delegates all transport/auth/retry to the plugin implementation. The first-party `webhook-compat` plugin wraps legacy HTTP webhook backends. **ADRs**: `cpt-cf-chat-engine-adr-plugin-backend-integration`, `cpt-cf-chat-engine-adr-routing-layer`, `cpt-cf-chat-engine-adr-circuit-breaker`, `cpt-cf-chat-engine-adr-timeout-configuration`.
 
 #### Response Streaming Module
 
@@ -547,8 +560,9 @@ For complete endpoint definitions, request/response schemas, and examples, see t
 **Discovery**: Plugin implementations are internal code modules registered in Chat Engine's plugin registry at startup by `plugin_instance_id`.
 
 **Plugin methods**:
-- `on_session_type_configured(ctx)` → `Vec<Capability>` — capabilities stored as `SessionType.available_capabilities`
-- `on_session_created(ctx)` — establishes per-session plugin state
+- `on_session_type_configured(ctx)` → `Vec<Capability>` — optional static capabilities stored as `SessionType.available_capabilities`; plugins may return empty and defer resolution to session creation
+- `on_session_created(ctx)` → `Vec<Capability>` — capabilities resolved at session creation time, stored as `Session.enabled_capabilities`
+- `on_session_updated(ctx)` → `Vec<Capability>` — called when user updates session capabilities; plugin re-resolves capabilities (e.g., model change triggers capability refresh from Model Registry), result overwrites `Session.enabled_capabilities`
 - `on_message(ctx, stream)` → streams response chunks
 - `on_message_recreate(ctx, stream)` → streams regenerated response
 - `on_session_summary(ctx, stream)` → streams session summary
@@ -612,6 +626,7 @@ sequenceDiagram
     participant Client
     participant Chat Engine
     participant Backend Plugin
+    participant Model Registry
 
     Client->>Chat Engine: List Session Types
     Chat Engine-->>Client: Available Session Types
@@ -619,11 +634,15 @@ sequenceDiagram
     Client->>Chat Engine: Create Session
 
     Chat Engine->>Chat Engine: Store Session
-    Chat Engine->>Backend Plugin: Notify Session Created
-    Backend Plugin-->>Chat Engine: Available Capabilities
+    Chat Engine->>Backend Plugin: on_session_created(ctx)
+    Backend Plugin->>Model Registry: Get available models
+    Model Registry-->>Backend Plugin: Models list
+    Backend Plugin->>Model Registry: Get capabilities for default model
+    Model Registry-->>Backend Plugin: Model capabilities
+    Backend Plugin-->>Chat Engine: Vec<Capability>
 
-    Chat Engine->>Chat Engine: Store Capabilities
-    Chat Engine-->>Client: Session Created
+    Chat Engine->>Chat Engine: Store Session Capabilities
+    Chat Engine-->>Client: Session Created (enabled_capabilities)
 
     Client->>Chat Engine: Send Message
 
@@ -1156,7 +1175,30 @@ All external communication requires TLS: Client ↔ Chat Engine (HTTPS), Chat En
 
 Database-level encryption is an infrastructure concern configured at the database cluster level. Application-level field encryption is excluded (see Section 5: Intentional Exclusions).
 
-### 3.7 Observability
+### 3.7 Data Consistency
+
+**ID**: `cpt-cf-chat-engine-design-data-consistency`
+
+#### Transaction Boundaries
+
+| Operation | Scope | Isolation |
+|-----------|-------|-----------|
+| Message creation (send/recreate) | Single message INSERT + variant_index assignment | SERIALIZABLE on (session_id, parent_message_id) |
+| Message subtree delete | Recursive CTE + DELETE reactions + DELETE messages | Single transaction, READ COMMITTED |
+| Session soft/hard delete | Session UPDATE/DELETE + cascade messages + reactions | Single transaction |
+| Reaction UPSERT | Single row INSERT ON CONFLICT UPDATE | Row-level lock on (message_id, user_id) |
+
+#### Variant Index Concurrency
+
+The UNIQUE constraint `(session_id, parent_message_id, variant_index)` requires safe concurrent variant_index assignment when multiple recreate or branch operations target the same parent message simultaneously.
+
+**Strategy**: SELECT MAX(variant_index) + 1 within a serializable sub-transaction scoped to (session_id, parent_message_id). On constraint violation (concurrent race), retry with fresh MAX. Maximum 3 retries before returning 409 Conflict.
+
+#### Idempotency
+
+Message creation is not idempotent — each POST creates a new message node with a new UUID. Client-side deduplication (request ID header) is the responsibility of the client SDK. Reaction UPSERT is idempotent by design (INSERT ON CONFLICT UPDATE).
+
+### 3.8 Observability
 
 **ID**: `cpt-cf-chat-engine-design-observability`
 
@@ -1183,7 +1225,7 @@ All request handling emits structured log events with the following fields: `tra
 
 `trace_id` is generated per request and propagated in all outbound calls (webhook, database). Included in error responses for support correlation without exposing internal details.
 
-### 3.8 Testing Architecture
+### 3.9 Testing Architecture
 
 **ID**: `cpt-cf-chat-engine-design-testing-arch`
 
@@ -1294,3 +1336,8 @@ Aspects acknowledged and intentionally excluded from this DESIGN.
 | **Async Queue** | Message queue / event bus integration | Excluded per `cpt-cf-chat-engine-constraint-sync-webhooks` |
 | **Deployment** | Container orchestration, cloud-specific config | Infrastructure concern; out of DESIGN scope |
 | **Client SDKs** | SDK implementation details | Covered by developer experience NFR; not a design deliverable |
+| **Compliance Architecture** | GDPR/CCPA compliance framework | Chat Engine acts as data processor; regulatory compliance is the responsibility of data controllers (client applications). Technical mechanisms (hard delete, retention policies) are documented in §3.6 Data Protection |
+| **Usability / UX** | User interface design, accessibility | Backend API service; UX is a client application responsibility |
+| **Business Alignment** | Business capability mapping, cost analysis | Addressed via PRD traceability in §1.2; detailed business mapping maintained in PRD |
+| **Capacity Planning** | Connection limits, storage projections | Deferred to operational planning phase; database scaling bounded by `cpt-cf-chat-engine-constraint-single-database` |
+| **Threat Modeling** | STRIDE analysis, attack surface mapping | Conducted separately as part of security review process; not embedded in DESIGN artifact |

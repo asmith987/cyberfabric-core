@@ -55,15 +55,29 @@ Confirmed via design review and alignment with DESIGN.md implementation.
 
 ### Option 1: Cryptographic share token with separate table
 
-See "Considered Options" and "Consequences" above for trade-off analysis.
+* Good, because tokens are cryptographically secure and not guessable (min 32 chars random)
+* Good, because revocation is instant via database flag without token re-issue
+* Good, because optional expiration and audit trail (created_by, created_at) are built in
+* Good, because multiple tokens per session allow sharing with different recipient groups
+* Bad, because separate table join required for token-to-session lookup
+* Bad, because share_tokens table grows unbounded and requires cleanup
+* Bad, because no token refresh mechanism (expired tokens require generating new ones)
 
 ### Option 2: Signed session_id JWT
 
-See "Considered Options" and "Consequences" above for trade-off analysis.
+* Good, because stateless verification (no database lookup needed for validation)
+* Good, because expiration is built into the JWT standard
+* Bad, because session_id is embedded in the token payload (exposed if decoded)
+* Bad, because revocation requires a blocklist (defeats stateless benefit)
+* Bad, because multiple tokens per session with different permissions are awkward to manage
 
 ### Option 3: Publicly readable sessions
 
-See "Considered Options" and "Consequences" above for trade-off analysis.
+* Good, because no token generation or validation logic needed (simplest implementation)
+* Good, because sharing is trivial (just share the session URL)
+* Bad, because all sessions are exposed by default violating secure-by-default principle
+* Bad, because no revocation or expiration possible (access is permanent and universal)
+* Bad, because no audit trail for who accessed shared conversations
 
 ## Related Design Elements
 

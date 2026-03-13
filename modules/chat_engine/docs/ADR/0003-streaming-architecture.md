@@ -52,15 +52,29 @@ Confirmed via design review and alignment with DESIGN.md implementation.
 
 ### Option 1: Streaming-first with HTTP chunked transfer
 
-See "Considered Options" and "Consequences" above for trade-off analysis.
+* Good, because first response chunk arrives at client within 200ms of backend streaming
+* Good, because perceived latency is much lower than buffered approach
+* Good, because clients can cancel slow responses mid-generation saving compute resources
+* Good, because non-streaming backends work transparently via stream adapter wrapping
+* Bad, because streaming overhead adds ~10ms latency per chunk forwarding
+* Bad, because partial responses require special handling if connection drops
+* Bad, because backpressure management adds complexity (buffer limits, flow control)
 
 ### Option 2: Buffered responses
 
-See "Considered Options" and "Consequences" above for trade-off analysis.
+* Good, because implementation is simple (no chunked encoding, no backpressure logic)
+* Good, because response is always complete and consistent when delivered to client
+* Bad, because time-to-first-byte equals total backend processing time (seconds for LLMs)
+* Bad, because no cancellation possible mid-generation (resources wasted on unwanted responses)
+* Bad, because user perceives the system as unresponsive during long backend processing
 
 ### Option 3: Optional streaming
 
-See "Considered Options" and "Consequences" above for trade-off analysis.
+* Good, because each backend can use the most natural delivery mode
+* Good, because non-streaming backends avoid unnecessary chunked encoding overhead
+* Bad, because Chat Engine must implement and maintain two separate response paths
+* Bad, because client must handle both streaming and non-streaming protocols
+* Bad, because per-backend configuration adds operational complexity and testing surface
 
 ## Related Design Elements
 

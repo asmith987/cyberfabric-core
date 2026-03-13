@@ -4,14 +4,6 @@
   "title": "LlmSessionTypeMetadata",
   "description": "LLM gateway plugin configuration stored in SessionType.metadata. Forwarded to the plugin in every call context as session_type_metadata.",
   "type": "object",
-  "properties": {
-    "default_model": {
-      "type": "string",
-      "minLength": 1,
-      "description": "Default LLM model identifier used when the user does not override via capabilities",
-      "examples": ["gpt-4o", "gpt-4o-mini", "o1"]
-    }
-  },
-  "required": ["default_model"],
+  "properties": {},
   "additionalProperties": false
 }

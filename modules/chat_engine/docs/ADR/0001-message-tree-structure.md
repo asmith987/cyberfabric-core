@@ -51,15 +51,29 @@ Confirmed via design review and alignment with DESIGN.md implementation.
 
 ### Option 1: Immutable tree with parent_message_id
 
-See "Considered Options" and "Consequences" above for trade-off analysis.
+* Good, because database foreign key constraints enforce tree integrity automatically
+* Good, because immutability prevents accidental corruption of conversation history
+* Good, because concurrent message creation is safe (different parents = no conflicts)
+* Good, because variants are naturally represented as siblings sharing the same parent
+* Bad, because traversal queries require recursive CTEs for deep trees
+* Bad, because calculating active path requires following is_active flags through the tree
+* Bad, because re-parenting messages is impossible (by design, ensuring immutability)
 
 ### Option 2: Mutable linked list
 
-See "Considered Options" and "Consequences" above for trade-off analysis.
+* Good, because traversal is simple (follow next/previous pointers without recursive queries)
+* Good, because active path is implicit in the linked list order
+* Bad, because mutable pointers create race conditions under concurrent writes
+* Bad, because branching requires duplicating and relinking portions of the list
+* Bad, because referential integrity is fragile (pointer updates can break the chain)
 
 ### Option 3: Graph structure with edge table
 
-See "Considered Options" and "Consequences" above for trade-off analysis.
+* Good, because arbitrary relationships between messages are possible (maximum flexibility)
+* Good, because re-parenting and complex topologies are supported natively
+* Bad, because additional join through edge table adds query complexity and latency
+* Bad, because no inherent constraint prevents cycles or inconsistent graph structures
+* Bad, because conversation branching semantics are not naturally represented (overengineered for tree-shaped data)
 
 ## Related Design Elements
 
