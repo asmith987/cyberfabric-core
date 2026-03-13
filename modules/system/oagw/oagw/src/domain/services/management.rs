@@ -79,7 +79,6 @@ impl ControlPlaneService for ControlPlaneServiceImpl {
 
         // Enforce alias derivation / explicit rules.
         let alias = enforce_alias_create(req.alias.as_deref(), &req.server.endpoints)?;
-        validate_alias(&alias)?;
 
         let tenant_id = ctx.subject_tenant_id();
         let id = Uuid::new_v4();
@@ -173,7 +172,6 @@ impl ControlPlaneService for ControlPlaneServiceImpl {
                 &existing.alias,
                 &old_endpoints,
             )?;
-            validate_alias(&alias)?;
             existing.alias = alias;
         } else if let Some(ref user_alias) = req.alias {
             let normalized = normalize_alias(user_alias);
@@ -880,6 +878,7 @@ fn enforce_alias_create(
                 }
                 // User provided the exact derived value — tolerate silently.
             }
+            validate_alias(&derived)?;
             Ok(derived)
         }
         None => {
@@ -925,6 +924,7 @@ fn enforce_alias_update(
                     )));
                 }
             }
+            validate_alias(derived)?;
             Ok(derived.clone())
         }
         // derivable → non-derivable: must provide explicit alias.
