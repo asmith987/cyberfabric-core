@@ -74,7 +74,7 @@ impl MetricsConfig {
             .map(str::trim)
             .filter(|p| !p.is_empty())
             .map_or_else(
-                || modkit_utils::naming::to_snake_case(module_name),
+                || heck::ToSnakeCase::to_snake_case(module_name),
                 str::to_owned,
             )
     }

@@ -83,6 +83,7 @@ modkit-security = { workspace = true }
 modkit-macros = { workspace = true }
 modkit-odata = { workspace = true, features = ["with-utoipa"] }
 modkit-utils = { workspace = true }
+heck = { workspace = true }
 secrecy = { workspace = true }
 
 [dev-dependencies]
