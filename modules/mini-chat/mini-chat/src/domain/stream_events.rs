@@ -5,8 +5,10 @@
 //! `api::rest::sse`.
 
 use modkit_macros::domain_model;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use uuid::Uuid;
 
 use crate::domain::llm::{Citation, ToolPhase, Usage};
 
@@ -17,10 +19,11 @@ use crate::domain::llm::{Citation, ToolPhase, Usage};
 /// Stream event envelope for the `messages:stream` pipeline.
 ///
 /// Each variant maps to a distinct SSE `event:` name and `data:` JSON payload.
-/// Ordering grammar: `ping* (delta | tool)* citations? (done | error)`.
+/// Ordering grammar: `turn_started ping* (delta | tool)* citations? (done | error)`.
 #[domain_model]
 #[derive(Debug, Clone, ToSchema)]
 pub enum StreamEvent {
+    TurnStarted(TurnStartedData),
     Ping,
     Delta(DeltaData),
     Tool(ToolData),
@@ -66,6 +69,8 @@ pub struct DoneData {
     pub downgrade_from: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub downgrade_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quota_warnings: Option<Vec<QuotaWarning>>,
 }
 
 /// Stream error (terminal).
@@ -76,6 +81,42 @@ pub struct ErrorData {
     pub message: String,
 }
 
+/// Initial lifecycle event carrying the server-generated request ID.
+#[domain_model]
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct TurnStartedData {
+    pub request_id: Uuid,
+}
+
+/// Quota tier classification.
+#[domain_model]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum QuotaTier {
+    Premium,
+    Total,
+}
+
+/// Quota period classification.
+#[domain_model]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum QuotaPeriod {
+    Daily,
+    Monthly,
+}
+
+/// Per-tier, per-period quota warning entry in the SSE `done` event.
+#[domain_model]
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct QuotaWarning {
+    pub tier: QuotaTier,
+    pub period: QuotaPeriod,
+    pub remaining_percentage: u8,
+    pub warning: bool,
+    pub exhausted: bool,
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // StreamEventKind — coarse classification for ordering enforcement
 // ════════════════════════════════════════════════════════════════════════════
@@ -84,6 +125,7 @@ pub struct ErrorData {
 #[domain_model]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamEventKind {
+    TurnStarted,
     Ping,
     Delta,
     Tool,
@@ -97,6 +139,7 @@ impl StreamEvent {
     #[must_use]
     pub fn event_kind(&self) -> StreamEventKind {
         match self {
+            StreamEvent::TurnStarted(_) => StreamEventKind::TurnStarted,
             StreamEvent::Ping => StreamEventKind::Ping,
             StreamEvent::Delta(_) => StreamEventKind::Delta,
             StreamEvent::Tool(_) => StreamEventKind::Tool,

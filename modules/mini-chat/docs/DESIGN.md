@@ -390,9 +390,19 @@ All period boundaries use UTC. Per-tenant timezone configuration (`quota_timezon
 
 **Quota period boundary invariant (normative)**: All settlement operations (reserve release and commit) MUST target the same `(period_type, period_start)` bucket rows as the original reserve. The `period_start` values are computed at preflight time and MUST NOT be recomputed at settlement time using the current clock. Implementations MUST persist the preflight `period_start` values alongside the reserve (e.g., in the `chat_turns` row or in context passed to the settlement path) and use those persisted values for all subsequent settlement operations. This ensures that in-flight reserves straddling period boundaries (e.g., a turn started at 23:59:59 UTC and completed at 00:00:01 UTC) are settled against the correct day-1 bucket rows rather than incorrectly targeting day-2 — which would cause `reserved_credits_micro` in day-1 to remain permanently inflated while day-2 is double-reserved.
 
-#### Quota Warning Thresholds (P2+)
+#### Quota Warning Thresholds (P1)
 
-Quota warning thresholds (`warning_threshold_pct`, `quota_warnings` array in the SSE `done` event) are deferred to P2+. P1 does not emit quota warning notifications in the SSE stream.
+The SSE `done` event carries a `quota_warnings` array with per-tier, per-period remaining percentage, warning flag, and exhausted flag. A REST endpoint `GET /v1/quota/status` provides the same data plus credit breakdowns and next-reset timestamps for at-rest queries.
+
+**Configuration:** `warning_threshold_pct` (integer, default 80, range 1-99). Warning fires when `remaining_percentage <= (100 - warning_threshold_pct)`. Exhausted fires when `remaining_percentage == 0`.
+
+#### Quota Status Endpoint (P1)
+
+`GET /v1/quota/status` returns per-tier, per-period quota breakdown for the authenticated user. No query parameters — returns all tiers and periods.
+
+Response includes: `tier` (premium/total), `period` (daily/monthly), `limit_credits_micro`, `used_credits_micro` (spent + reserved, conservative), `remaining_credits_micro`, `remaining_percentage` (0-100), `next_reset` (RFC 3339 — midnight UTC tomorrow for daily, midnight UTC 1st of next month for monthly), `warning` (boolean), `exhausted` (boolean), and `warning_threshold_pct` (config value).
+
+Authorization: authenticated + licensed. Scoped to tenant + user. Billing outcomes and settlement details are NOT exposed — only remaining quota data.
 
 Background tasks (thread summary update, document summary generation) MUST run with `requester_type=system` and MUST NOT be charged to an arbitrary end user. Usage for these tasks is charged to a tenant operational bucket (implementation-defined) and still emitted to `audit_service`.
 
@@ -820,7 +830,7 @@ To support reconnect UX and reduce support reliance on direct DB inspection, the
 - `request_id`
 - `state`: `running|done|error|cancelled`
 - `error_code` (nullable string) — terminal error code when `state` is `error` (e.g. `provider_error`, `orphan_timeout`). Null for non-error states and while running. Mapped from `chat_turns.error_code`. Provider identifiers and billing outcome are not exposed.
-- `assistant_message_id` (nullable UUID) — persisted assistant message ID when `state` is `done`. Null while running, on error, or on cancellation. Allows clients to fetch the assistant message directly without listing all messages.
+- `assistant_message_id` (nullable UUID) — persisted assistant message ID. Present when `state` is `done`. Present when `state` is `cancelled` if partial content was persisted (non-empty accumulated text at cancellation point). Null while `running` or on `error`. Allows clients to fetch the assistant message directly without listing all messages.
 - `updated_at`
 
 Turn Status is authoritative for lifecycle state resolution after disconnect. `error_code` provides actionable terminal error categorization so clients can display an appropriate error message without further queries. `assistant_message_id` lets clients fetch the completed assistant message directly by ID without scanning full message history; retrieving the message content itself requires one follow-up request (`GET /v1/chats/{id}/messages?$filter=id eq '{assistant_message_id}'`). Billing outcome, internal settlement details, and provider internals are not exposed via this endpoint in P1.
@@ -868,7 +878,16 @@ UI guidance: if the SSE stream disconnects before a terminal event, the UI SHOUL
 
 #### SSE Event Definitions
 
-Six event types. The stream always ends with exactly one terminal event: `done` or `error`. Image-bearing turns use the same event types; no new SSE events are required for image support. The `citations` event MAY include items from both `file_search` (`source="file"`) and `web_search` (`source="web"`). Image inputs do not produce citations by themselves.
+Seven event types. The stream always begins with `turn_started` (carrying the server-generated `request_id`) and ends with exactly one terminal event: `done` or `error`. Image-bearing turns use the same event types; no new SSE events are required for image support. The `citations` event MAY include items from both `file_search` (`source="file"`) and `web_search` (`source="web"`). Image inputs do not produce citations by themselves.
+
+##### `event: turn_started`
+
+Emitted once at stream start, before any content events. Carries the server-generated `request_id` for this turn. Present on `POST /messages:stream`, `POST /turns/{id}/retry`, and `PATCH /turns/{id}`.
+
+```
+event: turn_started
+data: {"request_id": "550e8400-e29b-41d4-a716-446655440000"}
+```
 
 ##### `event: delta`
 
@@ -917,7 +936,7 @@ data: {"items": [{"source": "file", "title": "Q3 Report.pdf", "attachment_id": "
 | Field | Type | Description |
 |-------|------|-------------|
 | `items[].source` | `"file"` \| `"web"` | Citation source type. |
-| `items[].title` | string | Document or page title. |
+| `items[].title` | string | Citation title. For file citations (`source="file"`), contains the original uploaded filename (e.g. `"Q3_Report.pdf"`). For web citations (`source="web"`), contains the page title. |
 | `items[].url` | string (optional) | URL for web sources. |
 | `items[].attachment_id` | UUID (optional) | Internal attachment identifier for file sources. This is the only file identifier exposed to clients. |
 | `items[].span` | object (optional) | Reserved for mapping citations to the final assistant text. If provided: `{ "start": number, "end": number }` character offsets into the full assistant output. |
@@ -959,7 +978,7 @@ Finalizes the stream. Provides usage and model selection metadata.
 | `quota_decision` | `"allow"` \| `"downgrade"` (required) | Always present. `"allow"` when the turn used the selected model without override; `"downgrade"` when a quota-driven downgrade occurred. |
 | `downgrade_from` | string (optional) | Always equals `selected_model` when present — the model from which the quota-driven downgrade occurred. Present only when `quota_decision="downgrade"`. |
 | `downgrade_reason` | string (optional) | Why downgrade occurred. Present only when `quota_decision="downgrade"`. Values: `"premium_quota_exhausted"` (user's premium quota exhausted — quota-driven downgrade); `"force_standard_tier"` (operator kill switch: premium tier forcibly disabled for this tenant via `force_standard_tier=true`); `"disable_premium_tier"` (operator kill switch: premium tier globally disabled via `disable_premium_tier=true`); `"model_disabled"` (operator kill switch: the selected model's `global_enabled=false`). |
-| `quota_warnings` | array of objects (optional) | Deferred to P2+. Not emitted in P1. |
+| `quota_warnings` | array of objects (optional) | Per-tier quota status. Each entry: `{ tier, period, remaining_percentage, warning, exhausted }`. Present on CAS-winning completed/incomplete turns. Absent on error, cancelled, replay, and CAS-loser paths. |
 
 ##### `event: error`
 
@@ -1008,7 +1027,7 @@ A well-formed stream follows this ordering:
 **P1 normative ordering**:
 
 ```text
-ping*  (delta | tool)*  citations?  (done | error)
+turn_started  ping*  (delta | tool)*  citations?  (done | error)
 ```
 
 - Zero or more `ping` events may appear at any point before terminal.
@@ -1910,7 +1929,7 @@ Tracks idempotency and in-progress generation state for `request_id`. This avoid
 | state | VARCHAR(16) | `running`, `completed`, `failed`, `cancelled` |
 | provider_name | VARCHAR(128) | Provider GTS identifier (nullable until request starts). Same GTS format as `messages.provider_name`. |
 | provider_response_id | VARCHAR(128) | Provider response ID (nullable) |
-| assistant_message_id | UUID | Persisted assistant message ID (nullable until completed) |
+| assistant_message_id | UUID | Persisted assistant message ID (nullable — set for `completed` and `cancelled`-with-content turns) |
 | error_code | VARCHAR(64) | Terminal error code (nullable) |
 | reserve_tokens | BIGINT | Preflight token reserve (`estimated_input_tokens + max_output_tokens_applied`). Persisted at preflight before any outbound provider call. Nullable - NULL only for turns that fail before a reserve is taken (pre-reserve failures). Immutable after insert. Used for deterministic reconciliation under ABORTED and post-provider-start FAILED outcomes (sections 5.7, 5.8, 5.9). |
 | max_output_tokens_applied | INTEGER | The `max_output_tokens` value used at preflight for this turn. Persisted at preflight (same time as `reserve_tokens`). Nullable — NULL only for pre-reserve failures. Immutable after insert. Required for deterministic derivation of `estimated_input_tokens` at settlement time: `estimated_input_tokens = reserve_tokens - max_output_tokens_applied` (sections 5.8, 5.9). |
@@ -2983,21 +3002,21 @@ Retrieved file search excerpts are integrated into the prompt as follows:
 5. Retrieved chunks are subject to the token budget truncation rules in Context Plan Assembly: thread summary and system prompt always have higher priority; retrieval excerpts are truncated first when the budget is exceeded.
 6. Maximum retrieved chunks per turn and maximum retrieved tokens per turn are configurable (see RAG defaults below).
 
-#### Citation File ID Resolution
+#### Citation File ID and Title Resolution
 
-File citations returned by the provider include a provider-specific file identifier (`provider_file_id`) in the annotation payload. Before constructing the client-visible citation object, the backend MUST resolve this provider identifier to the internal `attachment_id` used by the Mini Chat system.
+File citations returned by the provider include a provider-specific file identifier (`provider_file_id`) in the annotation payload. Before constructing the client-visible citation object, the backend MUST resolve this provider identifier to the internal `attachment_id` and populate the `title` field with the original uploaded `filename` from the `attachments` table.
 
 Resolution is performed by a lookup in the `attachments` table:
 
 ```
-(chat_id, provider_file_id) → attachment_id
+(chat_id, provider_file_id) → (attachment_id, filename)
 ```
 
-The lookup MUST be restricted to the current `chat_id` to preserve tenant and chat isolation. Raw `provider_file_id` values MUST NOT be exposed in API responses. The citation payload returned to the client MUST contain the internal `attachment_id` only.
+The lookup MUST be restricted to the current `chat_id` to preserve tenant and chat isolation. Raw `provider_file_id` values MUST NOT be exposed in API responses. The citation payload returned to the client MUST contain the internal `attachment_id` and the human-readable `filename` as the citation `title`.
 
 **Citation resolution rules**:
 
-1. If a matching attachment row is found and the attachment is not soft-deleted (`deleted_at IS NULL`), the citation MUST include the corresponding `attachment_id`.
+1. If a matching attachment row is found and the attachment is not soft-deleted (`deleted_at IS NULL`), the citation MUST include the corresponding `attachment_id` and set `title` to the attachment's `filename`.
 2. If no matching attachment is found (e.g., provider returns an unknown file ID), the citation MUST be omitted from the `citations` event. The backend MUST NOT expose the raw `provider_file_id` to the client.
 3. If the attachment exists but is soft-deleted (`deleted_at IS NOT NULL`), the citation MUST be omitted. The raw provider identifier MUST NOT be returned.
 4. The `attachments` table MUST maintain an index on `(chat_id, provider_file_id)` to ensure deterministic and efficient lookup.
@@ -3944,7 +3963,7 @@ Orphan watchdog timeout MUST be bounded to prevent indefinite user-visible lock 
 
 The following are explicitly out of scope for P1 crash recovery:
 
-- **No partial delta persistence**: streamed deltas are not persisted incrementally during normal streaming operation. If the pod crashes mid-stream, partial text is lost. On user-initiated cancellation, the accumulated in-memory content up to the cancel point MAY be persisted as a single final partial message (see cancellation sequence above); this is a one-time snapshot, not incremental delta persistence. No replay or resume from partial content is supported.
+- **No partial delta persistence**: streamed deltas are not persisted incrementally during normal streaming operation. If the pod crashes mid-stream, partial text is lost. On user-initiated cancellation, the accumulated in-memory content up to the cancel point is persisted as a single final partial message when non-empty (see cancellation sequence above); this is a one-time snapshot, not incremental delta persistence. The persisted partial message participates in conversation history and context assembly for subsequent turns. No replay or resume from partial content is supported.
 - **No resume-from-delta**: the system does not resume generation from the last streamed token after a crash.
 - **No event sourcing**: turn state is a simple row update, not an append-only event log.
 - **No cross-pod streaming recovery**: a stream cannot be handed off from a crashed pod to a surviving pod. Recovery is client-driven via the turn status API.
@@ -5330,7 +5349,8 @@ Deterministic reconciliation for `ABORTED` and post-provider-start `FAILED` outc
 
 **Clarification (normative):** “Single shared function” does NOT require a single DB update shape. The function MAY branch internally by terminal outcome:
 - For `completed` (including provider `response.incomplete`): finalize via the “completed” CAS path that sets `assistant_message_id` and MUST keep `chat_turns.error_code = NULL`. Any incomplete/truncation reason MUST be recorded only as `completion_signal` in audit/outbox payloads and the `mini_chat_stream_incomplete_total{reason}` metric.
-- For `failed` / `cancelled`: finalize via the “terminal state” CAS path that may set `error_code` / `error_detail` as specified elsewhere in this section.
+- For `cancelled` with non-empty accumulated text: persist the partial assistant message and set `assistant_message_id` (same INSERT + SET sequence as completed), but do NOT retry-as-failed on persistence failure — best-effort only, log at `warn` and finalize as `cancelled` with `assistant_message_id = NULL`.
+- For `failed` / `cancelled` with empty text: finalize via the “terminal state” CAS path that may set `error_code` / `error_detail` as specified elsewhere in this section.
 
 #### Dedupe Key Requirement for Quota-Bearing Events (Normative)
 
@@ -6620,6 +6640,7 @@ Estimation budgets are embedded **per-model** in the policy snapshot catalog. Ea
 | Parameter | Type | Default | Valid range | Source |
 |-----------|------|---------|-------------|--------|
 | `quota.overshoot_tolerance_factor` | `float` | `1.10` | `1.00..=1.50` | **ConfigMap** |
+| `quota.warning_threshold_pct` | `integer` | `80` | `1..=99` | **ConfigMap** |
 
 ### B.5.4 Quota downgrade negative threshold
 

@@ -69,6 +69,7 @@ pub async fn replay_turn<MR: MessageRepository>(
         quota_decision: reconstruct_quota_decision(turn, selected_model),
         downgrade_from: reconstruct_downgrade_from(turn, selected_model),
         downgrade_reason: None,
+        quota_warnings: None,
     }));
 
     Ok(ReplayEvents { delta, done })
@@ -205,6 +206,16 @@ mod tests {
             unimplemented!()
         }
 
+        async fn soft_delete_by_request_id<C: DBRunner>(
+            &self,
+            _: &C,
+            _: &AccessScope,
+            _: Uuid,
+            _: Uuid,
+        ) -> Result<u64, DomainError> {
+            unimplemented!()
+        }
+
         async fn snapshot_boundary<C: DBRunner>(
             &self,
             _: &C,
@@ -300,7 +311,7 @@ mod tests {
     async fn replay_turn_happy_path() {
         let db_raw = inmem_db().await;
         let db = mock_db_provider(db_raw);
-        let scope = AccessScope::allow_all().tenant_only();
+        let scope = AccessScope::allow_all();
 
         let msg_id = Uuid::new_v4();
         let turn = make_completed_turn(Some(msg_id), Some("gpt-5.2".to_owned()));
@@ -342,7 +353,7 @@ mod tests {
     async fn replay_turn_no_downgrade() {
         let db_raw = inmem_db().await;
         let db = mock_db_provider(db_raw);
-        let scope = AccessScope::allow_all().tenant_only();
+        let scope = AccessScope::allow_all();
 
         let msg_id = Uuid::new_v4();
         let turn = make_completed_turn(Some(msg_id), Some("gpt-5.2".to_owned()));
@@ -370,7 +381,7 @@ mod tests {
     async fn replay_turn_downgrade_detected() {
         let db_raw = inmem_db().await;
         let db = mock_db_provider(db_raw);
-        let scope = AccessScope::allow_all().tenant_only();
+        let scope = AccessScope::allow_all();
 
         let msg_id = Uuid::new_v4();
         // effective_model differs from selected_model → downgrade
@@ -400,7 +411,7 @@ mod tests {
     async fn replay_turn_missing_assistant_message_id() {
         let db_raw = inmem_db().await;
         let db = mock_db_provider(db_raw);
-        let scope = AccessScope::allow_all().tenant_only();
+        let scope = AccessScope::allow_all();
 
         let turn = make_completed_turn(None, Some("gpt-5.2".to_owned()));
         let repo = MockMessageRepo::new();
@@ -419,7 +430,7 @@ mod tests {
     async fn replay_turn_message_not_found() {
         let db_raw = inmem_db().await;
         let db = mock_db_provider(db_raw);
-        let scope = AccessScope::allow_all().tenant_only();
+        let scope = AccessScope::allow_all();
 
         let msg_id = Uuid::new_v4();
         let turn = make_completed_turn(Some(msg_id), Some("gpt-5.2".to_owned()));
