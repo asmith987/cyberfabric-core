@@ -518,7 +518,7 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -564,7 +564,7 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-db"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -594,7 +594,7 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-db-macros"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "heck 0.5.0",
  "proc-macro-error2",
@@ -605,7 +605,7 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-errors"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "axum 0.8.8",
  "http",
@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-errors-macro"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -627,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-macros"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -638,7 +638,7 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-odata"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "base64",
  "bigdecimal",
@@ -658,7 +658,7 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-sdk"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "cf-modkit-odata",
  "cf-modkit-security",
@@ -668,7 +668,7 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-security"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "anyhow",
  "postcard",
@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-utils"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "humantime",
  "regex",
@@ -691,7 +691,7 @@ dependencies = [
 
 [[package]]
 name = "cf-system-sdk-directory"
-version = "0.1.25"
+version = "0.1.26"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -699,7 +699,7 @@ dependencies = [
 
 [[package]]
 name = "cf-system-sdks"
-version = "0.1.25"
+version = "0.1.26"
 dependencies = [
  "cf-system-sdk-directory",
 ]
@@ -932,6 +932,69 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
+name = "de0101_no_serde_in_contract"
+version = "0.1.0"
+dependencies = [
+ "clippy_utils",
+ "dylint_linting",
+ "dylint_testing",
+ "lint_utils",
+ "serde",
+]
+
+[[package]]
+name = "de0102_no_toschema_in_contract"
+version = "0.1.0"
+dependencies = [
+ "clippy_utils",
+ "dylint_linting",
+ "dylint_testing",
+ "lint_utils",
+ "utoipa",
+]
+
+[[package]]
+name = "de0103_no_http_types_in_contract"
+version = "0.1.0"
+dependencies = [
+ "axum 0.7.9",
+ "clippy_utils",
+ "dylint_linting",
+ "dylint_testing",
+ "http",
+ "lint_utils",
+]
+
+[[package]]
+name = "de0104_no_api_dto_in_contract"
+version = "0.1.0"
+dependencies = [
+ "cf-modkit",
+ "cf-modkit-macros",
+ "clippy_utils",
+ "dylint_linting",
+ "dylint_testing",
+ "lint_utils",
+ "serde",
+ "utoipa",
+]
+
+[[package]]
+name = "de0110_no_schema_for_on_gts_structs"
+version = "0.1.0"
+dependencies = [
+ "clippy_utils",
+ "dylint_linting",
+ "dylint_testing",
+ "gts",
+ "gts-macros",
+ "lint_utils",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "de0201_dtos_only_in_api_rest"
 version = "0.1.0"
 dependencies = [
@@ -972,6 +1035,18 @@ dependencies = [
  "lint_utils",
  "serde",
  "utoipa",
+]
+
+[[package]]
+name = "de0205_operation_builder"
+version = "0.1.0"
+dependencies = [
+ "cf-modkit",
+ "clippy_utils",
+ "dylint_linting",
+ "dylint_testing",
+ "lint_utils",
+ "tokio",
 ]
 
 [[package]]
