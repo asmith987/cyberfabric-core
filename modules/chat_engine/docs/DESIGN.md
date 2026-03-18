@@ -158,7 +158,7 @@ Once a message is created with a parent_message_id, that relationship is immutab
 <!-- fdd-id-content -->
 **ADRs**: `cpt-cf-chat-engine-adr-capability-model`, `cpt-cf-chat-engine-adr-plugin-backend-integration`, `cpt-cf-chat-engine-adr-llm-gateway-plugin`
 
-Backend plugins are code modules inside Chat Engine implementing the `ChatEngineBackendPlugin` trait. A session type references its plugin via `plugin_instance_id`. On `on_session_created`, the plugin resolves capabilities (e.g., by querying external services) and returns `Vec<Capability>` stored as `Session.enabled_capabilities`. On each message operation, Chat Engine calls the corresponding trait method and receives a `ResponseStream`. Plugins own all outbound communication — for example, the LLM gateway plugin makes HTTP requests to the Model Registry and LLM gateway service. Chat Engine does not interpret capability semantics, transport details, or external service protocols. Plugins may extend `SessionType.metadata` and `Message.metadata` with typed fields by registering GTS derived schemas — see `cpt-cf-chat-engine-adr-llm-gateway-plugin`.
+Backend plugins are code modules inside Chat Engine implementing the `ChatEngineBackendPlugin` trait. A session type references its plugin via `plugin_instance_id`. Plugin configuration is stored separately in `plugin_configs` (keyed by `plugin_instance_id` + `session_type_id`) and forwarded to the plugin in every call context. On `on_session_created`, the plugin resolves capabilities (e.g., by querying external services) and returns `Vec<Capability>` stored as `Session.enabled_capabilities`. On each message operation, Chat Engine calls the corresponding trait method and receives a `ResponseStream`. Plugins own all outbound communication — for example, the LLM gateway plugin makes HTTP requests to the Model Registry and LLM gateway service. Chat Engine does not interpret capability semantics, transport details, or external service protocols. Plugins may extend `PluginConfig.config` and `Message.metadata` with typed fields by registering GTS derived schemas — see `cpt-cf-chat-engine-adr-llm-gateway-plugin`.
 <!-- fdd-id-content -->
 
 #### Principle: Stream Everything
@@ -298,7 +298,7 @@ Message entity (message_id, session_id, parent_message_id, role, content, file_i
 
 - [ ] `p1` - **ID**: `cpt-cf-chat-engine-design-entity-session-type`
 
-Binding of a plugin and its configuration (session_type_id, name, plugin_instance_id, available_capabilities, metadata, retention_policy)
+Binding of a plugin reference and session type identity (session_type_id, name, plugin_instance_id, available_capabilities, retention_policy). Plugin-specific configuration is stored separately in `PluginConfig` entity (see `cpt-cf-chat-engine-dbtable-plugin-configs`)
 
 ##### Capability
 
@@ -457,7 +457,7 @@ Chat Engine orchestrates message creation, persistence, and tree management. It 
 
 Chat Engine's plugin invocation layer. Resolves `dyn ChatEngineBackendPlugin` by `plugin_instance_id`, constructs call context, and invokes plugin methods (`on_session_type_configured`, `on_session_created`, `on_session_updated`, `on_message`, `on_message_recreate`, `on_session_summary`). On `on_session_created` and `on_session_updated`, the plugin returns `Vec<Capability>` stored as `Session.enabled_capabilities`. Auth, retry, circuit breaker, and timeouts are the plugin's responsibility.
 
-**N:1 session type → plugin relationship**: Multiple differently-configured session types can share the same `plugin_instance_id`. The call context always includes `session_type_id` and `session_type_metadata` (the `metadata` JSON blob from the `session_types` table), allowing a single plugin instance to serve multiple session types with different behaviour (e.g., different configuration, different capability set, different processing strategy).
+**N:1 session type → plugin relationship**: Multiple differently-configured session types can share the same `plugin_instance_id`. Plugin configuration is stored separately in the `plugin_configs` table (keyed by `plugin_instance_id` + `session_type_id`). The call context always includes `session_type_id` and `plugin_config` (the `config` JSONB from the `plugin_configs` table), allowing a single plugin instance to serve multiple session types with different behaviour (e.g., different configuration, different capability set, different processing strategy).
 <!-- fdd-id-content -->
 
 #### Response Streaming
@@ -1162,8 +1162,18 @@ sequenceDiagram
 | session_type_id | UUID PK | Unique session type identifier |
 | name | VARCHAR | Human-readable name |
 | plugin_instance_id | VARCHAR | GTS plugin instance ID — references an internal ChatEngineBackendPlugin implementation (see `cpt-cf-chat-engine-adr-plugin-backend-integration`) |
-| summarization_settings | JSONB NULL | Optional summarization configuration |
-| metadata | JSONB | Plugin-specific configuration |
+| created_at | TIMESTAMPTZ | Creation timestamp |
+| updated_at | TIMESTAMPTZ | Last modification timestamp |
+
+##### plugin_configs
+
+- [ ] `p1` - **ID**: `cpt-cf-chat-engine-dbtable-plugin-configs`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| plugin_instance_id | VARCHAR | Plugin instance identifier (composite PK) |
+| session_type_id | UUID FK | References session_types (composite PK) |
+| config | JSONB | Plugin-specific configuration — opaque to Chat Engine, validated by the plugin against its registered GTS schema |
 | created_at | TIMESTAMPTZ | Creation timestamp |
 | updated_at | TIMESTAMPTZ | Last modification timestamp |
 

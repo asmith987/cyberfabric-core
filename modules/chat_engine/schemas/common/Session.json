@@ -28,7 +28,7 @@
     "enabled_capabilities": {
       "type": "array",
       "items": { "$ref": "./Capability.json" },
-      "description": "Capabilities confirmed and enabled by the backend plugin on session creation (`on_session_created`). Chat Engine uses this list for feature gating (e.g., file upload, summarization). May be a subset of `SessionType.available_capabilities` depending on plugin logic and `SessionType.metadata`."
+      "description": "Capabilities confirmed and enabled by the backend plugin on session creation (`on_session_created`). Chat Engine uses this list for feature gating (e.g., file upload, summarization). May be a subset of `SessionType.available_capabilities` depending on plugin logic and `PluginConfig.config`."
     },
     "metadata": {
       "type": "object",

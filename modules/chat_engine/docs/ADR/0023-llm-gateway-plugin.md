@@ -26,10 +26,10 @@ date: 2026-03-06
   - [Capability Refresh on Model Change (`on_session_updated`)](#capability-refresh-on-model-change-onsessionupdated)
 - [Plugin Input: Messages List](#plugin-input-messages-list)
 - [Schema Extensions](#schema-extensions)
-  - [Metadata Schemas](#metadata-schemas)
+  - [Plugin Config & Metadata Schemas](#plugin-config--metadata-schemas)
   - [Entity Schemas](#entity-schemas)
 - [Context Overflow and Summarization](#context-overflow-and-summarization)
-  - [Trigger: context_overflow Error](#trigger-context_overflow-error)
+  - [Trigger: context_overflow Error](#trigger-contextoverflow-error)
   - [Summarization Flow](#summarization-flow)
   - [Message Visibility After Summarization](#message-visibility-after-summarization)
   - [Re-summarization](#re-summarization)
@@ -54,7 +54,7 @@ How should the LLM gateway plugin implement these concerns while keeping Chat En
 
 * Capabilities must come from a reliable external source — hardcoding them in the plugin creates drift when models change
 * User-selectable LLM params (model, temperature, max_tokens, web_search) must go through the capabilities system (ADR-0002) — plugin resolves `Session.enabled_capabilities` at session creation by querying Model Registry
-* Plugin configuration belongs in `SessionType.metadata` — opaque to Chat Engine; model selection is not part of session type config — the default model is determined by Model Registry
+* Plugin configuration belongs in `PluginConfig.config` (ADR-0022) — opaque to Chat Engine, separate from session type entity; model selection is not part of plugin config — the default model is determined by Model Registry
 * LLM response facts (model_used, finish_reason, temperature_used) belong in `Message.metadata`
 * Base `Usage` schema must remain abstract and unchanged — `LlmUsage` is a standalone schema nested inside `LlmMessageMetadata.usage` as a plain dict within the JSONB field, not a derived type of `Usage`
 * Schema validation must work without modifying Chat Engine core
@@ -68,12 +68,12 @@ How should the LLM gateway plugin implement these concerns while keeping Chat En
 
 ## Decision Outcome
 
-Chosen option: "Model Registry + GTS derived schemas", because it keeps capabilities in sync with actual model support, separates user-selectable concerns (capabilities) from developer configuration (SessionType.metadata), provides typed validation for LLM-specific fields, and keeps the LLM plugin namespace isolated.
+Chosen option: "Model Registry + GTS derived schemas", because it keeps capabilities in sync with actual model support, separates user-selectable concerns (capabilities) from developer configuration (PluginConfig), provides typed validation for LLM-specific fields, and keeps the LLM plugin namespace isolated.
 
 ### Plugin Lifecycle
 
-1. **Startup** — plugin registers GTS derived schemas (`LlmSessionTypeMetadata`, `LlmMessageMetadata`, `LlmUsage`) and entity schemas in the GTS schema registry
-2. **Session type configuration** (`on_session_type_configured`) — plugin validates `SessionType.metadata` and returns an empty `Vec<Capability>` — capability resolution is deferred to session creation
+1. **Startup** — plugin registers GTS derived schemas (`LlmPluginConfig`, `LlmMessageMetadata`, `LlmUsage`) and entity schemas in the GTS schema registry
+2. **Session type configuration** (`on_session_type_configured`) — plugin validates `PluginConfig.config` and returns an empty `Vec<Capability>` — capability resolution is deferred to session creation
 3. **Session creation** (`on_session_created`) — plugin performs two-step capability resolution via **Model Registry**:
    1. Queries Model Registry for the **list of available models** — the registry returns the models list along with the designated default model; builds a `model` capability (`type: "enum"`, `enum_values` from registry, `default_value` from registry's default)
    2. Queries Model Registry for **capabilities of the default model** (temperature, max_tokens, web_search, etc.) and builds additional capabilities from the response
@@ -84,7 +84,7 @@ Chosen option: "Model Registry + GTS derived schemas", because it keeps capabili
    3. Returns updated `Vec<Capability>` — the `model` capability preserves its `enum_values` (available models list unchanged), but model-specific capabilities (temperature, max_tokens, web_search, etc.) are replaced with the new model's defaults and constraints
    4. Chat Engine overwrites `Session.enabled_capabilities` with the returned set
 5. **Message processing** (`on_message`, `on_message_recreate`) — Chat Engine assembles an ordered `messages: Message[]` list (see [Plugin Input: Messages List](#plugin-input-messages-list)) and passes it along with `CapabilityValue[]`. The plugin builds an LLM gateway request from this list, calls the LLM gateway service via HTTP, and streams the response back as `ResponseStream`. If the LLM gateway returns a context overflow error, the plugin signals `context_overflow` back to Chat Engine (see [Context Overflow and Summarization](#context-overflow-and-summarization))
-6. **Summarization** (`on_session_summary`) — Chat Engine passes `messages: Message[]` containing the messages selected for summarization. The plugin forwards them to the LLM gateway and streams the summary text back. The plugin is responsible only for summary generation — Chat Engine decides which messages to summarize and how to store the result
+6. **Summarization** (`on_session_summary`) — Chat Engine passes the **full visible message history** `messages: Message[]` to the plugin. The plugin decides which messages to summarize and which to keep (based on `summarization_settings` in its metadata), generates the summary text via LLM gateway, and returns a `SummaryResult` containing the summary text and the list of summarized message IDs. Chat Engine persists the result: creates the summary message, marks summarized messages as `is_hidden_from_backend`, and retries the original request
 
 ### External Service Dependencies
 
@@ -111,16 +111,16 @@ Chosen option: "Model Registry + GTS derived schemas", because it keeps capabili
 
 Confirmed when:
 
-- LLM plugin registers `LlmSessionTypeMetadata`, `LlmMessageMetadata`, and `LlmUsage` in GTS at startup
+- LLM plugin registers `LlmPluginConfig`, `LlmMessageMetadata`, and `LlmUsage` in GTS at startup
 - LLM plugin queries Model Registry during `on_session_created` (two-step: available models list, then default model capabilities) and returns session-specific capabilities
 - LLM plugin queries Model Registry during `on_session_updated` when the user changes the `model` capability, and returns updated capabilities for the new model
-- Creating a session type with LLM plugin validates `SessionType.metadata` against `LlmSessionTypeMetadata` (currently empty schema)
+- Creating a session type with LLM plugin validates `PluginConfig.config` against `LlmPluginConfig` schema
 - Assistant message responses include `Message.metadata` with `model_used`, `finish_reason`, and `LlmUsage` token counts
 - Non-LLM session types are unaffected by LLM schema registration
 - `on_message` successfully calls LLM gateway and streams response back through Chat Engine
-- When LLM gateway returns context overflow, Chat Engine triggers `on_session_summary`, stores summary as a hidden-from-user root message, marks summarized messages as hidden-from-backend, and retries `on_message` with compact history
-- `SessionType.summarization_settings.recent_messages_to_keep` controls the number of recent messages preserved during summarization
-- When `summarization_settings` is null, context overflow errors propagate to the client without summarization attempt
+- When LLM gateway returns context overflow, Chat Engine calls `on_session_summary` with full visible history; the plugin splits messages, generates summary, and returns `SummaryResult`; Chat Engine persists the result and retries `on_message`
+- The plugin decides which messages to summarize based on `LlmPluginConfig.summarization_settings` in `PluginConfig.config` — Chat Engine does not interpret plugin configuration
+- When `summarization_settings` is null in plugin config, the plugin signals that summarization is not supported, and Chat Engine propagates `context_overflow` to the client
 
 ## Pros and Cons of the Options
 
@@ -193,7 +193,7 @@ Example result after both steps for a typical LLM model:
 
 ## Plugin Input: Messages List
 
-The LLM gateway plugin receives a flat, ordered `messages: Message[]` list from Chat Engine for all message-processing and summarization calls. Chat Engine is responsible for assembling this list — the plugin treats it as an opaque conversation context and forwards it to the LLM gateway service.
+The LLM gateway plugin receives a flat, ordered `messages: Message[]` list from Chat Engine for message-processing and summarization calls. Chat Engine is responsible for assembling this list based on visibility flags.
 
 **`on_message` / `on_message_recreate`** — Chat Engine constructs `messages` from the session's active path, filtering by visibility:
 
@@ -214,34 +214,34 @@ messages = [
 ]
 ```
 
-**`on_session_summary`** — Chat Engine passes only the messages that need to be summarized:
+**`on_session_summary`** — Chat Engine passes the **full visible message history** (all messages with `is_hidden_from_backend = false`):
 
 ```
-messages = [msg1, msg2, ..., msgK]
+messages = [msg1, msg2, ..., msgN]
 ```
 
-During re-summarization, the previous summary is included as the first element:
+During re-summarization, the previous summary message is included as part of the visible history (first element):
 
 ```
-messages = [previous_summary_message, msgN, msgN+1, ..., msgK]
+messages = [previous_summary_message, msgK, msgK+1, ..., msgN]
 ```
 
-The plugin does not interpret message visibility flags or decide which messages to include — this is entirely Chat Engine's responsibility.
+The plugin is responsible for deciding which messages to summarize and which to keep, based on `summarization_settings` in its config (`PluginConfig.config`). Chat Engine only assembles the visible history and persists the plugin's result.
 
 ## Schema Extensions
 
-### Metadata Schemas
+### Plugin Config & Metadata Schemas
 
 **GTS Schema IDs registered by LLM gateway plugin**:
 
 | Schema | GTS ID | Extension Point |
 |--------|--------|-----------------|
-| `LlmSessionTypeMetadata` | `gts://gts.x.chat_engine.llm_gateway.session_type_metadata.v1` | `SessionType.metadata` |
-| `LlmSummarizationSettings` | `gts://gts.x.chat_engine.llm_gateway.summarization_settings.v1` | nested in `LlmSessionTypeMetadata.summarization_settings` |
+| `LlmPluginConfig` | `gts://gts.x.chat_engine.llm_gateway.plugin_config.v1` | `PluginConfig.config` |
+| `LlmSummarizationSettings` | `gts://gts.x.chat_engine.llm_gateway.summarization_settings.v1` | nested in `LlmPluginConfig.summarization_settings` |
 | `LlmMessageMetadata` | `gts://gts.x.chat_engine.llm_gateway.message_metadata.v1` | `Message.metadata` |
 | `LlmUsage` | `gts://gts.x.chat_engine.llm_gateway.usage.v1` | nested in `LlmMessageMetadata.usage` |
 
-**`LlmSessionTypeMetadata` fields**: `summarization_settings?: LlmSummarizationSettings | null` — context overflow summarization config; null disables summarization
+**`LlmPluginConfig` fields**: `summarization_settings?: LlmSummarizationSettings | null` — context overflow summarization config; null disables summarization
 
 **`LlmSummarizationSettings` fields**: `recent_messages_to_keep: int` (min 2, default 10) — number of recent messages to keep unsummarized on overflow
 
@@ -251,12 +251,11 @@ The plugin does not interpret message visibility flags or decide which messages 
 
 ### Entity Schemas
 
-GTS entity schemas registered by LLM gateway plugin (extend base Chat Engine schemas via JSON Schema `allOf`, overriding the `metadata` property; `metadata` is stored as JSONB):
+GTS entity schemas registered by LLM gateway plugin (extend base Chat Engine schemas via JSON Schema `allOf`, overriding the `metadata` property where applicable):
 
 | Schema | GTS ID | Extends |
 |--------|--------|---------|
 | `LlmMessage` | `gts://gts.x.chat_engine.llm_gateway.message.v1` | `common/Message` |
-| `LlmSessionType` | `gts://gts.x.chat_engine.llm_gateway.session_type.v1` | `common/SessionType` |
 | `LlmMessageGetResponse` | `gts://gts.x.chat_engine.llm_gateway.message_get_response.v1` | `message/MessageGetResponse` |
 | `LlmMessageNewResponse` | `gts://gts.x.chat_engine.llm_gateway.message_new_response.v1` | `webhook/MessageNewResponse` |
 | `LlmMessageRecreateResponse` | `gts://gts.x.chat_engine.llm_gateway.message_recreate_response.v1` | `webhook/MessageRecreateResponse` |
@@ -266,7 +265,7 @@ GTS entity schemas registered by LLM gateway plugin (extend base Chat Engine sch
 
 ## Context Overflow and Summarization
 
-When the LLM gateway cannot process a request because the conversation history exceeds the model's context window, Chat Engine automatically summarizes older messages and retries. Summarization strategy is configured per session type; the default behavior is to send full history and fall back to summarization only on overflow.
+When the LLM gateway cannot process a request because the conversation history exceeds the model's context window, Chat Engine delegates summarization to the plugin and retries. The plugin owns the summarization strategy — it decides which messages to summarize based on its own configuration (`summarization_settings` in `PluginConfig.config`). Chat Engine only persists the result.
 
 ### Trigger: context_overflow Error
 
@@ -280,20 +279,21 @@ Chat Engine recognizes `context_overflow` as a recoverable error and initiates t
 
 ### Summarization Flow
 
-Given `N = summarization_settings.recent_messages_to_keep` (configured on SessionType, default `10`):
-
 1. `on_message(messages=[msg1..msg50])` → plugin returns `context_overflow`
-2. Chat Engine splits: `to_summarize = msg1..msg40`, `to_keep = msg41..msg50`
-3. Chat Engine calls `on_session_summary(messages=[msg1..msg40])`
-4. Plugin forwards messages to LLM gateway, streams summary text back
-5. Chat Engine creates a **summary message**:
-   - `role: "system"`, `content: <summary text>`
-   - `parent_message_id: null` (root node, not part of the conversation tree)
-   - `is_hidden_from_user: true` (invisible to clients via API)
-6. Chat Engine marks `msg1..msg40` with `is_hidden_from_backend: true` (excluded from future plugin calls)
+2. Chat Engine calls `on_session_summary(messages=[msg1..msg50])` — passes the **full visible history** (same list that caused the overflow, without the current user message)
+3. Plugin reads `summarization_settings.recent_messages_to_keep` (default `10`) from its config (`PluginConfig.config`), splits messages: `to_summarize = msg1..msg40`, `to_keep = msg41..msg50`
+4. Plugin forwards `to_summarize` to LLM gateway, receives summary text
+5. Plugin returns `SummaryResult`:
+   - `summary_text: string` — generated summary
+   - `summarized_message_ids: Vec<MessageId>` — IDs of messages that were summarized (msg1..msg40)
+6. Chat Engine persists the result:
+   - Creates a **summary message**: `role: "system"`, `content: <summary_text>`, `parent_message_id: null` (root node), `is_hidden_from_user: true`
+   - Marks messages from `summarized_message_ids` with `is_hidden_from_backend: true`
 7. Chat Engine retries `on_message(messages=[summary_msg, msg41..msg50])`
 
-If the retry still results in `context_overflow`, Chat Engine returns an error to the client. The administrator should adjust `recent_messages_to_keep` or the model's context window.
+If the plugin's `summarization_settings` is null in its config, the plugin returns an error indicating summarization is not supported, and Chat Engine propagates `context_overflow` to the client.
+
+If the retry still results in `context_overflow`, Chat Engine returns an error to the client. The administrator should adjust `recent_messages_to_keep` in the plugin config or the model's context window.
 
 ### Message Visibility After Summarization
 
@@ -316,19 +316,20 @@ The user sees the full conversation history (msg1..msg50) — the summary messag
 
 ### Re-summarization
 
-When conversation grows and overflow occurs again, Chat Engine repeats the flow:
+When conversation grows and overflow occurs again, the flow repeats:
 
-1. Previous summary message is marked `is_hidden_from_backend: true`
-2. Newly overflowed messages (e.g., msg41..msg70) are marked `is_hidden_from_backend: true`
-3. `on_session_summary(messages=[previous_summary_msg, msg41..msg66])`
-4. A new summary message is created (root node, `is_hidden_from_user: true`)
-5. Retry with `on_message(messages=[new_summary_msg, msg67..msg74])`
+1. `on_message(messages=[prev_summary, msg41..msg74])` → plugin returns `context_overflow`
+2. Chat Engine calls `on_session_summary(messages=[prev_summary, msg41..msg74])` — full visible history including the previous summary message
+3. Plugin splits: `to_summarize = [prev_summary, msg41..msg66]`, `to_keep = msg67..msg74` — the previous summary is included in the summarization input so the new summary incorporates prior context
+4. Plugin returns `SummaryResult` with new summary text and `summarized_message_ids` (previous summary message + msg41..msg66)
+5. Chat Engine marks returned message IDs with `is_hidden_from_backend: true`, creates new summary message (root node, `is_hidden_from_user: true`)
+6. Chat Engine retries `on_message(messages=[new_summary_msg, msg67..msg74])`
 
 Each re-summarization produces a new root-level summary that incorporates the previous summary, maintaining continuity.
 
 ### Configuration
 
-Summarization is configured via `summarization_settings` on `SessionType`:
+Summarization is configured via `summarization_settings` in the plugin's config (`LlmPluginConfig`, stored in `PluginConfig.config`):
 
 ```json
 {
@@ -340,11 +341,11 @@ Summarization is configured via `summarization_settings` on `SessionType`:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `recent_messages_to_keep` | `integer` | `10` | Number of most recent messages to keep unsummarized when context overflow occurs |
+| `summarization_settings.recent_messages_to_keep` | `integer` | `10` | Number of most recent messages to keep unsummarized when context overflow occurs |
 
-If `summarization_settings` is `null`, summarization is disabled — `context_overflow` errors are propagated directly to the client.
+If `summarization_settings` is `null` in plugin config, summarization is disabled — `context_overflow` errors are propagated directly to the client.
 
-How the summary is generated (prompt, length, focus) is an internal concern of the LLM gateway plugin — Chat Engine only decides *which* messages to summarize and *where* to store the result.
+The entire summarization strategy — which messages to summarize, how to generate the summary (prompt, length, focus), and how many messages to keep — is the plugin's responsibility. Chat Engine only triggers `on_session_summary` on `context_overflow`, persists the `SummaryResult` (creates summary message, marks summarized messages), and retries the original request.
 
 ## Traceability
 

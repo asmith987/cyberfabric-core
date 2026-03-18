@@ -17,6 +17,7 @@ Updated:  2026-03-09 by Constructor Tech
   - [Option 3: Hybrid (chosen)](#option-3-hybrid-chosen)
 - [Plugin API Contract](#plugin-api-contract)
 - [N:1 Session Types → Plugin](#n1-session-types--plugin)
+  - [Plugin Config Entity](#plugin-config-entity)
 - [Related Design Elements](#related-design-elements)
 
 <!-- /toc -->
@@ -74,7 +75,8 @@ Confirmed when:
 - `on_session_type_configured` is called on session type setup; plugins may return capabilities or defer resolution to session creation
 - `on_session_created` returns `Vec<Capability>` stored as `Session.enabled_capabilities`
 - `on_session_updated` returns `Vec<Capability>` that overwrites `Session.enabled_capabilities`
-- `on_message` receives call context and streams response back through Chat Engine
+- `on_message` receives call context (including `plugin_config`) and streams response back through Chat Engine
+- Plugin configuration is stored in `plugin_configs` table, separate from `session_types`
 - `webhook-compat` plugin wraps a legacy HTTP webhook service without any changes to Chat Engine core
 
 ## Pros and Cons of the Options
@@ -122,7 +124,19 @@ Full trait and context struct definitions are in `chat-engine-sdk` and documente
 
 ## N:1 Session Types → Plugin
 
-Multiple session types can share the same `plugin_instance_id`. Each session type carries a `metadata` configuration bag forwarded to the plugin in every call context (`session_type_metadata` field). This allows a single plugin instance to serve multiple differently-configured session types — for example, a single plugin serving session types that differ only in configuration or processing strategy.
+Multiple session types can share the same `plugin_instance_id`. Plugin configuration is stored in a separate `plugin_configs` entity keyed by `(plugin_instance_id, session_type_id)`. This decouples plugin settings from the session type entity while preserving per-session-type configuration — a single plugin instance can serve multiple session types with different behaviour (e.g., different summarization strategy, different processing parameters).
+
+The plugin config is forwarded to the plugin in every call context (`plugin_config` field). Chat Engine treats the config as an opaque JSONB blob — only the plugin interprets its contents.
+
+### Plugin Config Entity
+
+| Column | Type | Description |
+|--------|------|-------------|
+| plugin_instance_id | VARCHAR | Plugin instance identifier (composite PK) |
+| session_type_id | UUID FK | References session_types (composite PK) |
+| config | JSONB | Plugin-specific configuration — opaque to Chat Engine |
+| created_at | TIMESTAMPTZ | Creation timestamp |
+| updated_at | TIMESTAMPTZ | Last modification timestamp |
 
 ## Related Design Elements
 
