@@ -9,6 +9,66 @@ release-plz updates this file in the Release PR.
 
 ## [Unreleased]
 
+## [0.1.14](https://github.com/cyberfabric/cyberfabric-core/compare/cf-static-tr-plugin-v0.1.13...cf-static-tr-plugin-v0.1.14) - 2026-03-23
+
+### Other
+
+- release (by @github-actions[bot]) - #1273
+
+### Contributors
+
+* @github-actions[bot]
+
+## [0.1.11](https://github.com/cyberfabric/cyberfabric-core/compare/cf-static-credstore-plugin-v0.1.10...cf-static-credstore-plugin-v0.1.11) - 2026-03-23
+
+### Other
+
+- release (by @github-actions[bot]) - #1273
+
+### Contributors
+
+* @github-actions[bot]
+
+## [0.1.13](https://github.com/cyberfabric/cyberfabric-core/compare/cf-static-authz-plugin-v0.1.12...cf-static-authz-plugin-v0.1.13) - 2026-03-23
+
+### Other
+
+- release (by @github-actions[bot]) - #1273
+
+### Contributors
+
+* @github-actions[bot]
+
+## [0.2.4](https://github.com/cyberfabric/cyberfabric-core/compare/cf-static-authn-plugin-v0.2.3...cf-static-authn-plugin-v0.2.4) - 2026-03-23
+
+### Other
+
+- release (by @github-actions[bot]) - #1273
+
+### Contributors
+
+* @github-actions[bot]
+
+## [0.1.15](https://github.com/cyberfabric/cyberfabric-core/compare/cf-single-tenant-tr-plugin-v0.1.14...cf-single-tenant-tr-plugin-v0.1.15) - 2026-03-23
+
+### Other
+
+- release (by @github-actions[bot]) - #1273
+
+### Contributors
+
+* @github-actions[bot]
+
+## [0.5.11](https://github.com/cyberfabric/cyberfabric-core/compare/cf-modkit-v0.5.10...cf-modkit-v0.5.11) - 2026-03-23
+
+### Fixed
+
+- *(modkit)* reject duplicate YAML mapping keys during config parsing (by @mattgarmon)
+
+### Contributors
+
+* @mattgarmon
+
 ## [0.1.14](https://github.com/cyberfabric/cyberfabric-core/compare/cf-static-tr-plugin-v0.1.13...cf-static-tr-plugin-v0.1.14) - 2026-03-22
 
 ### Other
