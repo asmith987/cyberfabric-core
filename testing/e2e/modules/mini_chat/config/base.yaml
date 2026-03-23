@@ -466,7 +466,7 @@ modules:
               web_search: true
               file_search: true
               image_generation: false
-              code_interpreter: false
+              code_interpreter: true
               computer_use: false
               mcp: false
             supported_endpoints:
