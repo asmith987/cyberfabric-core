@@ -33,17 +33,20 @@ use tonic::metadata::{MetadataKey, MetadataMap, MetadataValue};
 /// Build resource with service name and custom attributes
 #[cfg(feature = "otel")]
 pub(crate) fn build_resource(cfg: &OpenTelemetryResource) -> Resource {
-    let service_name = cfg.service_name.as_deref().unwrap_or("unknown_service");
     tracing::debug!(
         "Building OpenTelemetry resource for service: {}",
-        service_name
+        cfg.service_name
     );
-    let mut attrs = vec![KeyValue::new("service.name", service_name.to_owned())];
+    let mut attrs = vec![KeyValue::new("service.name", cfg.service_name.clone())];
 
-    if let Some(attr_map) = &cfg.attributes {
-        for (k, v) in attr_map {
-            attrs.push(KeyValue::new(k.clone(), v.clone()));
+    for (k, v) in &cfg.attributes {
+        // Skip any caller-supplied "service.name" entry: the dedicated field
+        // cfg.service_name already seeds attrs above and a duplicate key would
+        // create ambiguity in the resource attributes.
+        if k == "service.name" {
+            continue;
         }
+        attrs.push(KeyValue::new(k.clone(), v.clone()));
     }
 
     Resource::builder_empty().with_attributes(attrs).build()
@@ -175,11 +178,7 @@ pub fn init_tracing(
     global::set_tracer_provider(provider.clone());
 
     // Create tracer and layer
-    let service_name = otel_cfg
-        .resource
-        .service_name
-        .clone()
-        .unwrap_or_else(|| "unknown_service".to_owned());
+    let service_name = otel_cfg.resource.service_name.clone();
     let tracer = provider.tracer(service_name);
     let otel_layer = tracing_opentelemetry::OpenTelemetryLayer::new(tracer);
 
@@ -551,8 +550,8 @@ mod tests {
 
         let otel = OpenTelemetryConfig {
             resource: OpenTelemetryResource {
-                service_name: Some("test-service".to_owned()),
-                attributes: Some(attrs),
+                service_name: "test-service".to_owned(),
+                attributes: attrs,
             },
             tracing: TracingConfig {
                 enabled: true,
