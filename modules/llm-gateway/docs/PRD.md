@@ -89,6 +89,7 @@ LLM Gateway addresses these problems by providing a single integration point tha
 | GTS | Generic Type System — JSON Schema-based type definitions |
 | FileStorage | Platform module for storing and retrieving binary files (images, audio, video, documents) |
 | Model Registry | Platform module that resolves model identifiers to provider and endpoint information per tenant |
+| Hook Plugin | CyberFabric plugin architecture extension point for per-request processing. Multiple plugins can be enabled per tenant and are invoked in order. Pre-call plugins run before the provider adapter and can modify or block requests. Post-call plugins run after the full response is available and are observe-only — the response has already been delivered or is delivered unconditionally, so there is nothing to modify or block. |
 
 ## 2. Actors
 
@@ -350,7 +351,7 @@ The system **MUST** invoke Hook Plugin before sending a request to the provider.
 
 - [ ] `p2` - **ID**: `cpt-cf-llm-gateway-fr-post-response-interceptor-v1`
 
-The system **MUST** invoke Hook Plugin after receiving a response from the provider. The plugin can allow, block, or modify the response.
+The system **MUST** invoke all enabled Hook Plugins in order after the provider adapter returns a fully-assembled, normalized response. For streaming responses, the hook is invoked after all stream chunks have been received and the full response is assembled — the response may already have been delivered to the consumer. For async and batch requests, the hook is invoked after the job completes. Post-call hooks are observe-only: the gateway delivers the response to the consumer unconditionally, and the hook is invoked with a read-only view of the response after delivery (streaming) or as a fire-and-forget step that does not affect response delivery (sync). Batch requests are treated as individual calls — hooks are applied per request as if the requests were not batched.
 
 **Actors**: `cpt-cf-llm-gateway-actor-hook-plugin`, `cpt-cf-llm-gateway-actor-consumer`
 
@@ -891,16 +892,18 @@ Not applicable — LLM Gateway exposes only a REST API (documented in DESIGN.md)
 
 **Flow**:
 1. Consumer sends request
-2. Gateway invokes Hook Plugin pre_call
-3. Plugin allows, blocks, or modifies request
-4. If blocked: Gateway returns request_blocked error
-5. If allowed/modified: Gateway proceeds with request
+2. Gateway invokes all enabled Hook Plugins in order (pre_call)
+3. Each plugin can allow, block, or modify the request; modified request is passed to the next plugin
+4. If any plugin blocks: Gateway returns request_blocked error; remaining plugins are not invoked
+5. If all plugins allow/modify: Gateway proceeds with the (possibly modified) request
 
-**Postconditions**: Request processed or blocked.
+**Postconditions**: Request processed with (possibly modified) request, or blocked.
 
 **Acceptance criteria**:
-- Plugin can allow, block, or modify request
-- Blocked requests return request_blocked error
+- All enabled plugins are invoked in order
+- Each plugin can allow, block, or modify the request
+- First blocking plugin stops execution and returns request_blocked error
+- Modified request is passed to subsequent plugins and ultimately to the provider adapter
 
 #### UC-018: Post-Response Interceptor
 
@@ -910,17 +913,19 @@ Not applicable — LLM Gateway exposes only a REST API (documented in DESIGN.md)
 **Preconditions**: Hook Plugin configured for tenant.
 
 **Flow**:
-1. Provider returns response
-2. Gateway invokes Hook Plugin post_response
-3. Plugin allows, blocks, or modifies response
-4. If blocked: Gateway returns response_blocked error
-5. If allowed/modified: Gateway returns response to consumer
+1. Provider adapter returns normalized response (for streaming: after all chunks received and full response assembled; for async/batch: after job completes)
+2. Gateway invokes all enabled Hook Plugins in order (post_response)
+3. Each plugin observes and processes the response (e.g., logging, metrics); plugin outcome has no effect on response delivery
+4. Response is delivered to the consumer regardless of post-call plugin outcome
 
-**Postconditions**: Response returned or blocked.
+**Postconditions**: Response delivered; plugins have processed the response.
 
 **Acceptance criteria**:
-- Plugin can allow, block, or modify response
-- Blocked responses return response_blocked error
+- All enabled plugins are invoked in order after the full response is available
+- Post-call plugins are observe-only; plugin outcome has no effect on response delivery
+- Response is always delivered to the consumer regardless of post-call plugin outcome
+- For streaming: hook invoked after stream completes and full response is assembled; response already delivered to consumer
+- For batch: hooks are applied per individual request as if requests were not batched
 
 #### UC-019: Rate Limiting
 

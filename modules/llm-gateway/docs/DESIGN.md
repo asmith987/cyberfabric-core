@@ -72,14 +72,14 @@ See [PRD.md](./PRD.md) section 1 "Overview" — Key Problems Solved:
 | `cpt-cf-llm-gateway-fr-batch-processing-v1` | Provider batch API abstraction |
 | `cpt-cf-llm-gateway-fr-audit-events-v1` | Audit Module event emission |
 
-#### Non-functional requirements
+#### NFR Allocation
 
-| Cypilot ID | Solution short description |
-|--------|----------------------------|
-| `cpt-cf-llm-gateway-nfr-scalability-v1` | Stateless request processing, shared DB for async jobs |
-| `cpt-cf-llm-gateway-nfr-data-retention-v1` | TTL-based cleanup, background purge task for expired job records |
-| `cpt-cf-llm-gateway-nfr-recovery-v1` | Native async jobs: persistent DB survives restarts (RPO: 0). Simulated async jobs: not recovered on outage — marked failed to prevent unauthorized token spending |
-| `cpt-cf-llm-gateway-nfr-compatibility-v1` | API backward compatibility within major version, SDK-only inter-module communication |
+| NFR ID | NFR Summary | Allocated To | Design Response | Verification Approach |
+|--------|-------------|--------------|-----------------|----------------------|
+| `cpt-cf-llm-gateway-nfr-scalability-v1` | Horizontal scaling without per-instance coordination | `cpt-cf-llm-gateway-component-application-layer` | Stateless request processing; async/batch job state in shared DB accessible by any instance | Load test: N instances serve concurrent requests; job polling works cross-instance after restart |
+| `cpt-cf-llm-gateway-nfr-data-retention-v1` | TTL-based lifecycle for job/batch records | `cpt-cf-llm-gateway-component-application-layer` (background purge task), `cpt-cf-llm-gateway-db-persistence` | `expires_at` column on `jobs` and `batches` tables; background purge task deletes rows where `expires_at < now()` | DB audit: no row older than max TTL after purge cycle; purge task execution observable via structured logs |
+| `cpt-cf-llm-gateway-nfr-recovery-v1` | Restart survivability for in-flight async jobs | `cpt-cf-llm-gateway-component-application-layer`, `cpt-cf-llm-gateway-db-persistence` | Native async: `provider_job_id` persisted before returning to consumer; polling resumes after restart (RPO: 0). Simulated async: marked `failed` on restart to prevent unauthorized token spending | Restart test: native jobs resume polling; simulated jobs returned as `failed` with appropriate error |
+| `cpt-cf-llm-gateway-nfr-compatibility-v1` | API backward compatibility within major version | `cpt-cf-llm-gateway-component-api-layer` | Additive-only changes within major version; inter-module communication via SDK traits only (no internal type coupling) | Regression test suite runs on each release; breaking changes require major version bump |
 
 #### Key ADRs
 
@@ -94,6 +94,18 @@ See [PRD.md](./PRD.md) section 1 "Overview" — Key Problems Solved:
 | `cpt-cf-llm-gateway-adr-no-stored-responses` | No support for `store=true` or `previous_response_id` — stateless design preserved |
 
 ### 1.3 Architecture Layers
+
+```mermaid
+graph LR
+    Consumer([Consumer]) -->|REST / SSE / WebSocket| GW[LLM Gateway]
+    GW -->|via Outbound API GW| P[LLM Providers]
+    GW -->|SDK| MR[Model Registry]
+    GW -->|SDK| FS[FileStorage]
+    GW -->|SDK| TR[Type Registry]
+    GW -->|SDK| QM[Quota Manager]
+    GW -->|SDK| UT[Usage Tracker SDK]
+    GW -->|SDK| AM[Audit Module]
+```
 
 | Layer | Responsibility | Technology |
 |-------|---------------|------------|
@@ -309,14 +321,14 @@ graph TB
    - Provider-specific request/response translation
  - [ ] `p1` - **ID**: `cpt-cf-llm-gateway-component-hook-plugin`
    - Hook Plugin
-   - Pre-call and post-response interception (moderation, PII, transformation)
+   - Pre-call and post-response interception following CyberFabric plugin architecture. Multiple plugins can be enabled and are invoked in order. Pre-call plugins can modify or block requests before the provider adapter. Post-call plugins run after the full response is available (after streaming completes, or after async/batch job finishes) and are observe-only — the response has already been delivered or is delivered unconditionally, so plugin outcome has no effect on response delivery.
  - [ ] `p1` - **ID**: `cpt-cf-llm-gateway-component-quota-manager`
    - Quota Manager
    - Pre-request AI credit quota checks (pending: specific component to be determined — see PRD Open Questions)
  - [ ] `p1` - **ID**: `cpt-cf-llm-gateway-component-usage-tracker`
    - Usage Tracker
    - AI credit consumption reporting (tokens converted to credits via Model Registry prices). Usage Tracker SDK handles guaranteed at-least-once delivery
- - [ ] `p1` - **ID**: `cpt-cf-llm-gateway-component-audit-module`
+ - [ ] `p4` - **ID**: `cpt-cf-llm-gateway-component-audit-module`
    - Audit Module
    - Compliance event logging
 
@@ -537,6 +549,40 @@ Key streaming semantics:
 - Response lifecycle: created → queued → in_progress → completed | failed | incomplete
 - Provider-specific streaming events use extension format: `{provider_slug}:{event_type}`
 - CyberFabric extension events use `cyberfabric:` prefix: `cyberfabric:response.data.in_progress` (binary output started), `cyberfabric:response.data.done` (binary output completed with data)
+
+#### Hook Plugin SDK Interface
+
+**ID**: `cpt-cf-llm-gateway-interface-hook-plugin-sdk-v1`
+
+**Technology**: ModKit SDK trait (`LlmGatewayHookPluginClient`), resolved via ClientHub scoped clients following CyberFabric plugin architecture (see `docs/MODKIT_PLUGINS.md`)
+
+**GTS Schema ID**: `gts.x.core.modkit.plugin.v1~x.llmgw.hook_plugin.v1~`
+
+The Hook Plugin interface is defined in `llm-gateway-sdk` as a plugin client trait. The LLM Gateway registers the plugin schema in the types-registry; each hook plugin implementation registers its own instance and scoped client. The gateway resolves the active plugin via `choose_plugin_instance` using the configured vendor and lowest priority value.
+
+**Plugin trait methods** (`LlmGatewayHookPluginClient`):
+
+| Method | Invoked | Inputs | Output |
+|--------|---------|--------|--------|
+| `pre_request` | Before provider adapter, on every `/responses` request | `SecurityContext`, `gts.x.llmgw.core.create_response_body.v1~` | `Ok(gts.x.llmgw.core.create_response_body.v1~)` — allow, request unchanged or modified; or `Err(HookRejection)` — block, returns `request_blocked` to consumer |
+| `post_response` | After full response assembled — after stream closes; after async/batch job completes | `SecurityContext`, `gts.x.llmgw.core.create_response_body.v1~`, `gts.x.llmgw.core.response_resource.v1~` | `()` — observe-only; plugin errors are logged but do not affect response delivery |
+
+**`HookRejection`**: `{ reason: String }` — returned by `pre_request` to block a request. Maps to the `request_blocked` error code in the API error response.
+
+**Semantics**:
+
+- `pre_request` receives the normalized `gts.x.llmgw.core.create_response_body.v1~` before the provider adapter formats it for the specific provider. The returned value (possibly modified) is what the provider adapter receives.
+- `post_response` receives both the original request and the fully assembled `gts.x.llmgw.core.response_resource.v1~` (including `status: failed` responses — error state is carried in the response object, so no separate error hook is needed).
+- For streaming responses, `post_response` is invoked after the stream closes and the full response is assembled from chunks. The response has already been delivered to the consumer by this point.
+- Batch requests are treated as individual calls: `pre_request` and `post_response` are invoked once per individual request within the batch.
+- Hook plugin scope: applies to `/responses` endpoint requests (chat completion, streaming, image generation, async background jobs). The `/embeddings` endpoint is out of scope for hook interception in this version.
+
+**Plugin discovery and selection**:
+
+- LLM Gateway registers the GTS plugin schema (`gts.x.core.modkit.plugin.v1~x.llmgw.hook_plugin.v1~`) during module `init()`.
+- Each hook plugin registers a GTS instance and scoped client under a stable instance ID of the form `gts.x.core.modkit.plugin.v1~x.llmgw.hook_plugin.v1~<vendor>.<pkg>.hook_plugin.v1`.
+- Gateway uses `choose_plugin_instance` to select the plugin matching the configured vendor with the lowest priority value.
+- Plugin unavailability (client not found after resolution) causes the request to fail with a `hook_unavailable` error — hooks are not bypassed silently.
 
 ### 3.4 Interactions & Sequences
 
@@ -1029,12 +1075,15 @@ sequenceDiagram
     C->>GW: POST /responses (...)
     GW->>HP: pre_call(request)
     alt Blocked
-        HP-->>GW: blocked
+        HP-->>GW: reject
         GW-->>C: request_blocked
-    else Allowed/Modified
-        HP-->>GW: proceed
-        GW->>OB: Request
+    else Allowed / Modified
+        HP-->>GW: request (unchanged or modified)
+        GW->>OB: Request (possibly modified)
         OB->>P: Request
+        P-->>OB: Response
+        OB-->>GW: Normalized response
+        GW-->>C: ResponseResource
     end
 ```
 
@@ -1047,24 +1096,58 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
+    participant C as Consumer
     participant GW as LLM Gateway
     participant OB as Outbound API Gateway
     participant P as Provider
     participant HP as Hook Plugin
-    participant C as Consumer
 
+    C->>GW: POST /responses (...)
     GW->>OB: Request
     OB->>P: Request
     P-->>OB: Response
-    OB-->>GW: Response
+    OB-->>GW: Normalized response
+    GW-->>C: Response
     GW->>HP: post_response(response)
-    alt Blocked
-        HP-->>GW: blocked
-        GW-->>C: response_blocked
-    else Allowed/Modified
-        HP-->>GW: proceed
-        GW-->>C: Response
+    HP->>HP: process response
+    HP-->>GW: ok
+```
+
+#### Hook Plugin — Streaming
+
+- [ ] `p2` - **ID**: `cpt-cf-llm-gateway-seq-hook-plugin-streaming-v1`
+
+**Use cases**: `cpt-cf-llm-gateway-usecase-pre-call-interceptor-v1`, `cpt-cf-llm-gateway-usecase-post-response-interceptor-v1`
+**Actors**: `cpt-cf-llm-gateway-actor-consumer`, `cpt-cf-llm-gateway-actor-hook-plugin`
+
+For streaming responses, the pre-call hook runs before the stream starts. Chunks are forwarded to the consumer immediately as they arrive. The gateway accumulates a full response in parallel. The post-call hook is invoked with the fully assembled response after the stream closes — at this point the response has already been delivered to the consumer, so the post-call hook cannot modify it.
+
+```mermaid
+sequenceDiagram
+    participant C as Consumer
+    participant GW as LLM Gateway
+    participant HP as Hook Plugin
+    participant OB as Outbound API Gateway
+    participant P as Provider
+
+    C->>GW: POST /responses (stream=true)
+    GW->>HP: pre_call(request)
+    HP-->>GW: request (unchanged or modified)
+    GW->>OB: Streaming request
+    OB->>P: Request
+    GW-->>C: response.created
+    GW-->>C: response.in_progress
+    loop Stream chunks
+        P-->>OB: chunk
+        OB-->>GW: chunk
+        GW-->>C: response.output_text.delta
+        GW->>GW: Accumulate full response
     end
+    GW-->>C: response.completed
+    GW-->>C: [DONE]
+    GW->>HP: post_response(full_assembled_response)
+    HP->>HP: process response
+    HP-->>GW: ok
 ```
 
 #### Rate Limiting
@@ -1282,4 +1365,4 @@ All functional requirements (23 FRs) and non-functional requirements (4 NFRs) fr
 | PRD NFRs (4) | → | DESIGN Architecture Drivers (section 1.2) | All covered |
 | ADRs (7) | → | DESIGN Architecture Drivers + inline on principles/constraints | All covered |
 | DESIGN Components (7) | → | DECOMPOSITION | Pending |
-| DESIGN Sequences (22) | → | FEATURE | Pending |
+| DESIGN Sequences (23) | → | FEATURE | Pending |
