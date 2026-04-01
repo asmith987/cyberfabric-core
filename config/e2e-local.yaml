@@ -111,7 +111,7 @@ modules:
           in_flight: 64
 
       # Authentication Configuration
-      auth_disabled: true
+      auth_disabled: false
       require_auth_by_default: true
 
   # --- Tenant Resolver example (gateway + plugins) ---
@@ -221,7 +221,18 @@ modules:
     config:
       vendor: "hyperspot"
       priority: 100
-      mode: accept_all
+      mode: static_tokens
+      tokens:
+        - token: "e2e-token-tenant-a"
+          identity:
+            subject_id: "11111111-6a88-4768-9dfc-6bcd5187d9ed"
+            subject_tenant_id: "00000000-df51-5b42-9538-d2b56b7ee953"
+            token_scopes: ["*"]
+        - token: "e2e-token-tenant-b"
+          identity:
+            subject_id: "22222222-6a88-4768-9dfc-6bcd5187d9ed"
+            subject_tenant_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+            token_scopes: ["*"]
       s2s_credentials:
         - client_id: "mini-chat"
           client_secret: "mini-chat-dev-secret"

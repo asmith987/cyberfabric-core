@@ -33,12 +33,12 @@ def tenant_id():
 
 @pytest.fixture
 def oagw_headers(tenant_id):
-    """Standard headers for OAGW requests (tenant + optional auth)."""
-    headers = {"x-tenant-id": tenant_id}
-    token = os.getenv("E2E_AUTH_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return headers
+    """Standard headers for OAGW requests (tenant + auth)."""
+    token = os.getenv("E2E_AUTH_TOKEN", "e2e-token-tenant-a")
+    return {
+        "x-tenant-id": tenant_id,
+        "Authorization": f"Bearer {token}",
+    }
 
 
 # ---------------------------------------------------------------------------

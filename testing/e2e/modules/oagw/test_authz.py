@@ -52,10 +52,11 @@ async def test_proxy_authz_forbidden_nil_tenant(
                 client, oagw_base_url, oagw_headers, uid, ["GET"], "/v1/models",
             )
 
-            denied_headers = {"x-tenant-id": NIL_TENANT_ID}
-            token = os.getenv("E2E_AUTH_TOKEN")
-            if token:
-                denied_headers["Authorization"] = f"Bearer {token}"
+            token = os.getenv("E2E_AUTH_TOKEN", "e2e-token-tenant-a")
+            denied_headers = {
+                "x-tenant-id": NIL_TENANT_ID,
+                "Authorization": f"Bearer {token}",
+            }
 
             resp = await client.get(
                 f"{oagw_base_url}/oagw/v1/proxy/{alias}/v1/models",
