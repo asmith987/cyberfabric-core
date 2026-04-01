@@ -337,9 +337,9 @@ Authorization **MUST** be enforced in the gateway layer, not in plugins. Plugins
 - [ ] `p1` - **ID**: `cpt-cf-credstore-fr-external-key-mgmt`
 
 <!-- cpt-cf-id-content -->
-The Credentials Storage plugin **MUST** support pluggable key management via a `KeyProvider` abstraction. The default implementation stores tenant encryption keys in the same database as encrypted credentials. An alternative implementation **MUST** allow delegation to an external key management service (e.g., HashiCorp Vault, AWS KMS) for production environments where key–data separation is required. When the external `KeyProvider` is active, encryption keys **MUST** be stored separately from the database containing encrypted credentials, so that a single database compromise does not expose both ciphertext and decryption keys.
+The Credentials Storage plugin **SHOULD** support pluggable key management via a `KeyProvider` abstraction. The default implementation stores tenant encryption keys in the same database as encrypted credentials. An optional alternative implementation **MAY** delegate to an external key management service (e.g., HashiCorp Vault, AWS KMS) for production environments where key–data separation is desired. When the external `KeyProvider` is active, encryption keys **MUST** be stored separately from the database containing encrypted credentials, so that a single database compromise does not expose both ciphertext and decryption keys. Plugins that do not implement `KeyProvider` (e.g., VendorA Credstore, OS keychain) are not affected by this requirement.
 
-**Rationale**: A pluggable `KeyProvider` enables operational flexibility — simple single-database deployments by default, with the option to enforce defense-in-depth key–data separation for environments with regulatory or enterprise security requirements.
+**Rationale**: A pluggable `KeyProvider` enables operational flexibility — simple single-database deployments by default, with the option to enforce defense-in-depth key–data separation for environments with regulatory or enterprise security requirements. This capability is specific to the Credentials Storage plugin and does not impose changes on existing plugins.
 **Actors**: `cpt-cf-credstore-actor-backend`
 <!-- cpt-cf-id-content -->
 
