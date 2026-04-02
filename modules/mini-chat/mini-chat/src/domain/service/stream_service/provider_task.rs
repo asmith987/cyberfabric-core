@@ -8,7 +8,7 @@ use tracing::{Instrument, debug, info, warn};
 
 use crate::domain::llm::ToolPhase;
 use crate::domain::ports::metric_labels::{stage, trigger};
-use crate::domain::repos::{MessageRepository, TurnRepository};
+use crate::domain::repos::{MessageRepository, ToolCallType, TurnRepository};
 use crate::domain::stream_events::{DoneData, ErrorData, StreamEvent};
 use crate::infra::db::entity::chat_turn::TurnState;
 use crate::infra::llm::{
@@ -394,6 +394,18 @@ pub(super) fn spawn_provider_task<TR: TurnRepository + 'static, MR: MessageRepos
                                     }
                                     ToolPhase::Done => {
                                         web_search_completed_count += 1;
+                                        if let Some(ref fctx) = fin_ctx {
+                                            match fctx.db.conn() {
+                                                Ok(conn) => {
+                                                    if let Err(e) = fctx.turn_repo.increment_tool_calls(&conn, &fctx.scope, fctx.turn_id, ToolCallType::WebSearch).await {
+                                                        warn!(turn_id = %fctx.turn_id, error = %e, "failed to persist web_search_completed_count");
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    warn!(turn_id = %fctx.turn_id, error = %e, "failed to acquire DB connection for web_search_completed_count");
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -480,6 +492,18 @@ pub(super) fn spawn_provider_task<TR: TurnRepository + 'static, MR: MessageRepos
                                     }
                                     ToolPhase::Done => {
                                         code_interpreter_completed_count += 1;
+                                        if let Some(ref fctx) = fin_ctx {
+                                            match fctx.db.conn() {
+                                                Ok(conn) => {
+                                                    if let Err(e) = fctx.turn_repo.increment_tool_calls(&conn, &fctx.scope, fctx.turn_id, ToolCallType::CodeInterpreter).await {
+                                                        warn!(turn_id = %fctx.turn_id, error = %e, "failed to persist code_interpreter_completed_count");
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    warn!(turn_id = %fctx.turn_id, error = %e, "failed to acquire DB connection for code_interpreter_completed_count");
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }

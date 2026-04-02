@@ -4829,6 +4829,8 @@ mod tests {
             effective_model: Set(None),
             minimal_generation_floor_applied: Set(None),
             web_search_enabled: Set(false),
+            web_search_completed_count: Set(0),
+            code_interpreter_completed_count: Set(0),
             deleted_at: Set(None),
             replaced_by_request_id: Set(None),
             started_at: Set(now),
