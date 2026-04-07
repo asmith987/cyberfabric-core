@@ -9,16 +9,16 @@ Updated:  2026-03-06 by Constructor Tech
 
 - [1. Overview](#1-overview)
 - [2. Entries](#2-entries)
-  - [2.1 Session Lifecycle ⏳ HIGH](#21-session-lifecycle--high)
-  - [2.2 Message Processing & Streaming ⏳ HIGH](#22-message-processing--streaming--high)
-  - [2.3 Message Variants & Branching ⏳ MEDIUM](#23-message-variants--branching--medium)
-  - [2.4 Context & Memory Management ⏳ MEDIUM](#24-context--memory-management--medium)
-  - [2.5 Session Intelligence ⏳ MEDIUM](#25-session-intelligence--medium)
-  - [2.6 Message Reactions & Feedback ⏳ MEDIUM](#26-message-reactions--feedback--medium)
-  - [2.7 Session Export & Sharing ⏳ LOW](#27-session-export--sharing--low)
-  - [2.8 Message Search ⏳ LOW](#28-message-search--low)
-  - [2.9 Plugin System Infrastructure ⏳ HIGH](#29-plugin-system-infrastructure--high)
-  - [2.10 LLM Gateway Plugin ⏳ HIGH](#210-llm-gateway-plugin--high)
+  - [2.1 Session Lifecycle 🔄 HIGH](#21-session-lifecycle--high)
+  - [2.2 Message Processing & Streaming 🔄 HIGH](#22-message-processing--streaming--high)
+  - [2.3 Message Variants & Branching 🔄 MEDIUM](#23-message-variants--branching--medium)
+  - [2.4 Context & Memory Management 🔄 MEDIUM](#24-context--memory-management--medium)
+  - [2.5 Session Intelligence 🔄 MEDIUM](#25-session-intelligence--medium)
+  - [2.6 Message Reactions & Feedback 🔄 MEDIUM](#26-message-reactions--feedback--medium)
+  - [2.7 Session Export & Sharing 🔄 LOW](#27-session-export--sharing--low)
+  - [2.8 Message Search 🔄 LOW](#28-message-search--low)
+  - [2.9 Plugin System Infrastructure 🔄 HIGH](#29-plugin-system-infrastructure--high)
+  - [2.10 LLM Gateway Plugin 🔄 HIGH](#210-llm-gateway-plugin--high)
 - [3. Deliberate Omissions](#3-deliberate-omissions)
 - [4. Feature Dependencies](#4-feature-dependencies)
 
@@ -48,7 +48,7 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 - [ ] `p1` - **ID**: `cpt-cf-chat-engine-status-overall`
 
 
-### 2.1 [Session Lifecycle](features/session-lifecycle.md) ⏳ HIGH
+### 2.1 [Session Lifecycle](features/session-lifecycle.md) 🔄 HIGH
 
 - [ ] `p1` - **ID**: `cpt-cf-chat-engine-feature-session-lifecycle`
 
@@ -74,15 +74,15 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Requirements Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-fr-create-session`
-  - [ ] `p1` - `cpt-cf-chat-engine-fr-delete-session`
-  - [ ] `p1` - `cpt-cf-chat-engine-fr-soft-delete-session`
-  - [ ] `p1` - `cpt-cf-chat-engine-fr-hard-delete-session`
-  - [ ] `p2` - `cpt-cf-chat-engine-fr-restore-session`
-  - [ ] `p3` - `cpt-cf-chat-engine-fr-archive-session`
+  - [x] `p1` - `cpt-cf-chat-engine-fr-create-session`
+  - [x] `p1` - `cpt-cf-chat-engine-fr-delete-session`
+  - [x] `p1` - `cpt-cf-chat-engine-fr-soft-delete-session`
+  - [x] `p1` - `cpt-cf-chat-engine-fr-hard-delete-session`
+  - [x] `p2` - `cpt-cf-chat-engine-fr-restore-session`
+  - [x] `p3` - `cpt-cf-chat-engine-fr-archive-session`
   - [ ] `p1` - `cpt-cf-chat-engine-nfr-availability`
   - [ ] `p1` - `cpt-cf-chat-engine-nfr-authentication`
-  - [ ] `p1` - `cpt-cf-chat-engine-nfr-data-persistence`
+  - [x] `p1` - `cpt-cf-chat-engine-nfr-data-persistence`
   - [ ] `p1` - `cpt-cf-chat-engine-nfr-scalability`
   - [ ] `p2` - `cpt-cf-chat-engine-nfr-lifecycle-performance`
   - [ ] `p2` - `cpt-cf-chat-engine-nfr-recovery`
@@ -90,12 +90,12 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Design Principles Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-principle-backend-authority`
-  - [ ] `p1` - `cpt-cf-chat-engine-principle-zero-business-logic`
+  - [x] `p1` - `cpt-cf-chat-engine-principle-backend-authority`
+  - [x] `p1` - `cpt-cf-chat-engine-principle-zero-business-logic`
 
 - **Design Constraints Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-constraint-single-database`
+  - [x] `p1` - `cpt-cf-chat-engine-constraint-single-database`
 
 - **Domain Model Entities**:
   - Session
@@ -103,15 +103,15 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Design Entities**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-design-entity-session`
-  - [ ] `p1` - `cpt-cf-chat-engine-design-entity-session-type`
+  - [x] `p1` - `cpt-cf-chat-engine-design-entity-session`
+  - [x] `p1` - `cpt-cf-chat-engine-design-entity-session-type`
   - [ ] `p1` - `cpt-cf-chat-engine-design-entity-capability`
   - [ ] `p2` - `cpt-cf-chat-engine-design-entity-capability-value`
 
 - **Design Components**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-component-service`
-  - [ ] `p1` - `cpt-cf-chat-engine-component-session-management`
+  - [x] `p1` - `cpt-cf-chat-engine-component-service`
+  - [x] `p1` - `cpt-cf-chat-engine-component-session-management`
 
 - **API**:
   - `POST /session-types` — developer: register session type
@@ -133,11 +133,11 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Data**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-dbtable-sessions`
-  - [ ] `p1` - `cpt-cf-chat-engine-dbtable-session-types`
+  - [x] `p1` - `cpt-cf-chat-engine-dbtable-sessions`
+  - [x] `p1` - `cpt-cf-chat-engine-dbtable-session-types`
 
 
-### 2.2 [Message Processing & Streaming](features/message-processing.md) ⏳ HIGH
+### 2.2 [Message Processing & Streaming](features/message-processing.md) 🔄 HIGH
 
 - [ ] `p1` - **ID**: `cpt-cf-chat-engine-feature-message-processing`
 
@@ -165,22 +165,22 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 - **Requirements Covered**:
 
   - [ ] `p1` - `cpt-cf-chat-engine-fr-send-message`
-  - [ ] `p1` - `cpt-cf-chat-engine-fr-attach-files`
+  - [x] `p1` - `cpt-cf-chat-engine-fr-attach-files`
   - [ ] `p1` - `cpt-cf-chat-engine-fr-stop-streaming`
   - [ ] `p1` - `cpt-cf-chat-engine-nfr-response-time`
   - [ ] `p1` - `cpt-cf-chat-engine-nfr-streaming`
   - [ ] `p1` - `cpt-cf-chat-engine-nfr-backend-isolation`
   - [ ] `p1` - `cpt-cf-chat-engine-nfr-file-size`
-  - [ ] `p1` - `cpt-cf-chat-engine-nfr-data-integrity`
+  - [x] `p1` - `cpt-cf-chat-engine-nfr-data-integrity`
 
 - **Design Principles Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-principle-immutable-tree`
+  - [x] `p1` - `cpt-cf-chat-engine-principle-immutable-tree`
   - [ ] `p1` - `cpt-cf-chat-engine-principle-streaming`
 
 - **Design Constraints Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-constraint-external-storage`
+  - [x] `p1` - `cpt-cf-chat-engine-constraint-external-storage`
 
 - **Domain Model Entities**:
   - Message (MessageNode)
@@ -188,11 +188,11 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Design Entities**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-design-entity-message`
+  - [x] `p1` - `cpt-cf-chat-engine-design-entity-message`
 
 - **Design Components**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-component-message-processing`
+  - [x] `p1` - `cpt-cf-chat-engine-component-message-processing`
   - [ ] `p1` - `cpt-cf-chat-engine-component-webhook-integration`
   - [ ] `p1` - `cpt-cf-chat-engine-component-response-streaming`
 
@@ -207,10 +207,10 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Data**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-dbtable-messages`
+  - [x] `p1` - `cpt-cf-chat-engine-dbtable-messages`
 
 
-### 2.3 [Message Variants & Branching](features/message-variants.md) ⏳ MEDIUM
+### 2.3 [Message Variants & Branching](features/message-variants.md) 🔄 MEDIUM
 
 - [ ] `p2` - **ID**: `cpt-cf-chat-engine-feature-message-variants`
 
@@ -236,13 +236,13 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
   - [ ] `p1` - `cpt-cf-chat-engine-fr-recreate-response`
   - [ ] `p2` - `cpt-cf-chat-engine-fr-branch-message`
-  - [ ] `p2` - `cpt-cf-chat-engine-fr-navigate-variants`
+  - [x] `p2` - `cpt-cf-chat-engine-fr-navigate-variants`
   - [ ] `p2` - `cpt-cf-chat-engine-fr-switch-session-type`
   - [ ] `p2` - `cpt-cf-chat-engine-nfr-message-history`
 
 - **Design Principles Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-principle-immutable-tree`
+  - [x] `p1` - `cpt-cf-chat-engine-principle-immutable-tree`
 
 - **Design Constraints Covered**:
 
@@ -254,7 +254,7 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Design Components**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-component-message-processing`
+  - [x] `p1` - `cpt-cf-chat-engine-component-message-processing`
 
 - **API**:
   - `POST /sessions/{session_id}/messages/{message_id}/recreate`
@@ -275,7 +275,7 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
   - None (extends `cpt-cf-chat-engine-dbtable-messages` owned by feature-message-processing)
 
 
-### 2.4 [Context & Memory Management](features/context-management.md) ⏳ MEDIUM
+### 2.4 [Context & Memory Management](features/context-management.md) 🔄 MEDIUM
 
 - [ ] `p2` - **ID**: `cpt-cf-chat-engine-feature-context-management`
 
@@ -305,7 +305,7 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Design Principles Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-principle-immutable-tree`
+  - [x] `p1` - `cpt-cf-chat-engine-principle-immutable-tree`
 
 - **Design Constraints Covered**:
 
@@ -317,7 +317,7 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Design Components**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-component-message-processing`
+  - [x] `p1` - `cpt-cf-chat-engine-component-message-processing`
 
 - **API**:
   - `PATCH /sessions/{session_id}` — set `memory_strategy` field
@@ -331,7 +331,7 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
   - None (`memory_strategy` persisted in `cpt-cf-chat-engine-dbtable-sessions` owned by feature-session-lifecycle)
 
 
-### 2.5 [Session Intelligence](features/session-intelligence.md) ⏳ MEDIUM
+### 2.5 [Session Intelligence](features/session-intelligence.md) 🔄 MEDIUM
 
 - [ ] `p2` - **ID**: `cpt-cf-chat-engine-feature-session-intelligence`
 
@@ -361,7 +361,7 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Design Principles Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-principle-backend-authority`
+  - [x] `p1` - `cpt-cf-chat-engine-principle-backend-authority`
 
 - **Design Constraints Covered**:
 
@@ -373,8 +373,8 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Design Components**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-component-session-management`
-  - [ ] `p1` - `cpt-cf-chat-engine-component-message-processing`
+  - [x] `p1` - `cpt-cf-chat-engine-component-session-management`
+  - [x] `p1` - `cpt-cf-chat-engine-component-message-processing`
 
 - **API**:
   - `POST /sessions/{session_id}/summary`
@@ -391,7 +391,7 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
   - None (policy stored in `cpt-cf-chat-engine-dbtable-sessions` owned by feature-session-lifecycle)
 
 
-### 2.6 [Message Reactions & Feedback](features/message-reactions.md) ⏳ MEDIUM
+### 2.6 [Message Reactions & Feedback](features/message-reactions.md) 🔄 MEDIUM
 
 - [ ] `p2` - **ID**: `cpt-cf-chat-engine-feature-message-reactions`
 
@@ -416,27 +416,27 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Requirements Covered**:
 
-  - [ ] `p2` - `cpt-cf-chat-engine-fr-message-feedback`
-  - [ ] `p1` - `cpt-cf-chat-engine-fr-delete-message`
+  - [x] `p2` - `cpt-cf-chat-engine-fr-message-feedback`
+  - [x] `p1` - `cpt-cf-chat-engine-fr-delete-message`
 
 - **Design Principles Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-principle-immutable-tree`
+  - [x] `p1` - `cpt-cf-chat-engine-principle-immutable-tree`
 
 - **Design Constraints Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-constraint-single-database`
+  - [x] `p1` - `cpt-cf-chat-engine-constraint-single-database`
 
 - **Domain Model Entities**:
   - MessageReaction
 
 - **Design Entities**:
 
-  - [ ] `p2` - `cpt-cf-chat-engine-design-entity-message-reaction`
+  - [x] `p2` - `cpt-cf-chat-engine-design-entity-message-reaction`
 
 - **Design Components**:
 
-  - [ ] `p2` - `cpt-cf-chat-engine-component-message-reactions`
+  - [x] `p2` - `cpt-cf-chat-engine-component-message-reactions`
 
 - **API**:
   - `POST /sessions/{session_id}/messages/{message_id}/reaction` — UPSERT like/dislike/none
@@ -445,15 +445,15 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Sequences**:
 
-  - [ ] `p2` - `cpt-cf-chat-engine-seq-add-reaction`
-  - [ ] `p1` - `cpt-cf-chat-engine-seq-delete-message-cascade`
+  - [x] `p2` - `cpt-cf-chat-engine-seq-add-reaction`
+  - [x] `p1` - `cpt-cf-chat-engine-seq-delete-message-cascade`
 
 - **Data**:
 
-  - [ ] `p2` - `cpt-cf-chat-engine-dbtable-reactions`
+  - [x] `p2` - `cpt-cf-chat-engine-dbtable-reactions`
 
 
-### 2.7 [Session Export & Sharing](features/session-export.md) ⏳ LOW
+### 2.7 [Session Export & Sharing](features/session-export.md) 🔄 LOW
 
 - [ ] `p3` - **ID**: `cpt-cf-chat-engine-feature-session-export`
 
@@ -481,7 +481,7 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Design Principles Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-principle-zero-business-logic`
+  - [x] `p1` - `cpt-cf-chat-engine-principle-zero-business-logic`
 
 - **Design Constraints Covered**:
 
@@ -493,11 +493,11 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Design Entities**:
 
-  - [ ] `p2` - `cpt-cf-chat-engine-design-entity-share-token`
+  - [x] `p2` - `cpt-cf-chat-engine-design-entity-share-token`
 
 - **Design Components**:
 
-  - [ ] `p3` - `cpt-cf-chat-engine-component-conversation-export`
+  - [x] `p3` - `cpt-cf-chat-engine-component-conversation-export`
 
 - **API**:
   - `GET /sessions/{session_id}/export?format=json|markdown`
@@ -514,7 +514,7 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
   - None (share tokens stored in `cpt-cf-chat-engine-dbtable-sessions` owned by feature-session-lifecycle)
 
 
-### 2.8 [Message Search](features/message-search.md) ⏳ LOW
+### 2.8 [Message Search](features/message-search.md) 🔄 LOW
 
 - [ ] `p3` - **ID**: `cpt-cf-chat-engine-feature-message-search`
 
@@ -543,11 +543,11 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Design Principles Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-principle-zero-business-logic`
+  - [x] `p1` - `cpt-cf-chat-engine-principle-zero-business-logic`
 
 - **Design Constraints Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-constraint-single-database`
+  - [x] `p1` - `cpt-cf-chat-engine-constraint-single-database`
 
 - **Domain Model Entities**:
   - SearchResult
@@ -570,7 +570,7 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
   - None (search index on `cpt-cf-chat-engine-dbtable-messages` owned by feature-message-processing)
 
 
-### 2.9 [Plugin System Infrastructure](features/plugin-system.md) ⏳ HIGH
+### 2.9 [Plugin System Infrastructure](features/plugin-system.md) 🔄 HIGH
 
 - [ ] `p1` - **ID**: `cpt-cf-chat-engine-feature-plugin-system`
 
@@ -597,18 +597,18 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 - **Requirements Covered**:
 
   - [ ] `p1` - `cpt-cf-chat-engine-fr-schema-extensibility`
-  - [ ] `p1` - `cpt-cf-chat-engine-nfr-backend-isolation`
+  - [x] `p1` - `cpt-cf-chat-engine-nfr-backend-isolation`
   - [ ] `p1` - `cpt-cf-chat-engine-nfr-availability`
   - [ ] `p1` - `cpt-cf-chat-engine-nfr-response-time`
 
 - **Design Principles Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-principle-backend-authority`
-  - [ ] `p1` - `cpt-cf-chat-engine-principle-zero-business-logic`
+  - [x] `p1` - `cpt-cf-chat-engine-principle-backend-authority`
+  - [x] `p1` - `cpt-cf-chat-engine-principle-zero-business-logic`
 
 - **Design Constraints Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-constraint-single-database`
+  - [x] `p1` - `cpt-cf-chat-engine-constraint-single-database`
 
 - **Domain Model Entities**:
   - ChatEngineBackendPlugin (trait)
@@ -627,10 +627,10 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Data**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-dbtable-plugin-configs`
+  - [x] `p1` - `cpt-cf-chat-engine-dbtable-plugin-configs`
 
 
-### 2.10 [LLM Gateway Plugin](features/llm-gateway-plugin.md) ⏳ HIGH
+### 2.10 [LLM Gateway Plugin](features/llm-gateway-plugin.md) 🔄 HIGH
 
 - [ ] `p1` - **ID**: `cpt-cf-chat-engine-feature-llm-gateway-plugin`
 
@@ -669,7 +669,7 @@ Feature numbering reflects logical grouping, not implementation order. Recommend
 
 - **Design Principles Covered**:
 
-  - [ ] `p1` - `cpt-cf-chat-engine-principle-backend-authority`
+  - [x] `p1` - `cpt-cf-chat-engine-principle-backend-authority`
   - [ ] `p1` - `cpt-cf-chat-engine-principle-streaming`
 
 - **Design Constraints Covered**:
@@ -741,6 +741,6 @@ cpt-cf-chat-engine-feature-session-lifecycle
 - `cpt-cf-chat-engine-feature-message-search` requires `cpt-cf-chat-engine-feature-message-processing`: the full-text search index is built on the messages table populated by message processing.
 - `cpt-cf-chat-engine-feature-session-export` requires `cpt-cf-chat-engine-feature-session-lifecycle`: export reads session data from the sessions table and can operate on sessions without messages; share tokens are stored in the sessions table.
 - Features `plugin-system` and `message-processing` are independent of each other and can be developed in parallel once `session-lifecycle` is complete.
-- Features `message-variants`, `context-management`, `session-intelligence`, `message-reactions`, and `message-search` are independent of each other and can be developed in parallel once `message-processing` is complete.
+- Features `message-variants`, `context-management`, `message-reactions`, and `message-search` are independent of each other and can be developed in parallel once `message-processing` is complete. Feature `session-intelligence` also requires `message-processing` but additionally depends on `message-reactions` (for `seq-delete-message-cascade` used in retention enforcement), so it can only start after both are complete.
 - Feature `llm-gateway-plugin` can be developed once `plugin-system` is complete; it is independent of message-level features.
 - Feature `session-export` is independent of all message-level and plugin features and can be developed in parallel with them.

@@ -85,8 +85,8 @@ Success criteria: Message routing latency under 100ms p95; streaming first-byte 
 **Steps**:
 1. [ ] - `p1` - Algorithm: validate request using `cpt-cf-chat-engine-algo-message-processing-validate-request` - `inst-send-validate`
 2. [ ] - `p1` - API: POST /sessions/{session_id}/messages (body: content, file_ids?, parent_message_id?, enabled_capabilities?) - `inst-send-api`
-3. [ ] - `p1` - DB: Insert user message record (session_id, parent_message_id, role='user', content, file_ids, variant_index=0, is_active=true, is_complete=true) and return user_message_id - `inst-send-insert-user`
-4. [ ] - `p1` - **IF** file_ids present: validate each UUID format using `cpt-cf-chat-engine-algo-message-processing-validate-request` - `inst-send-validate-files`
+3. [ ] - `p1` - **IF** file_ids present: validate each UUID format using `cpt-cf-chat-engine-algo-message-processing-validate-request` - `inst-send-validate-files`
+4. [ ] - `p1` - DB: Insert user message record (session_id, parent_message_id, role='user', content, file_ids, variant_index=0, is_active=true, is_complete=true) and return user_message_id - `inst-send-insert-user`
 5. [ ] - `p1` - Algorithm: build history context using `cpt-cf-chat-engine-algo-message-processing-build-history` - `inst-send-build-history`
 6. [ ] - `p1` - DB: Pre-insert assistant message record (session_id, parent_message_id=user_message_id, role='assistant', is_complete=false) to obtain assistant_message_id - `inst-send-preinsert-assistant`
 7. [ ] - `p1` - Algorithm: invoke backend plugin with message.new event using `cpt-cf-chat-engine-algo-message-processing-invoke-plugin` - `inst-send-invoke`

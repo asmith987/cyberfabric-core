@@ -256,7 +256,7 @@ The system **MUST** default to full history strategy when a session has no expli
 
 ## 7. Non-Functional Considerations
 
-- **Performance**: Active-path extraction query targets < 20ms p95 using existing index on messages.session_id. Sliding window strategy avoids loading the full message history by applying LIMIT to the query. Context construction adds < 5ms overhead to the message processing pipeline.
+- **Performance**: Active-path extraction query targets < 20ms p95 using existing index on messages.session_id. Sliding window truncation is applied in-memory after active-path extraction; a future optimization may push the LIMIT into the SQL query to avoid loading the full message history for large sessions. Context construction adds < 5ms overhead to the message processing pipeline.
 - **Security**: Memory strategy is a session-level configuration scoped by the same ownership and tenant isolation rules as other session metadata. No new authentication surface.
 - **Reliability**: Default full strategy ensures no behavioral change for existing sessions. Overflow handling is idempotent: repeated context_overflow on the same request produces the same summarization result (single retry, then propagate).
 - **Data**: Memory strategy persisted in sessions.metadata JSONB field; no schema migration required. Summary messages use existing messages table columns (is_hidden_from_user, is_hidden_from_backend).
