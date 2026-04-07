@@ -325,12 +325,12 @@ security: deny
 openapi:
 	@command -v curl >/dev/null || (echo "curl is required to generate OpenAPI spec" && exit 1)
 	@echo "Starting hyperspot-server to generate OpenAPI spec..."
-	@$(call start_server_and_wait,cargo run --bin hyperspot-server $(E2E_ARGS) -- --config config/quickstart.yaml,$(OPENAPI_URL),300); \
-	echo "Fetching OpenAPI spec..."; \
-	mkdir -p $$(dirname "$(OPENAPI_OUT)"); \
-	curl -fsS "$(OPENAPI_URL)" -o "$(OPENAPI_OUT)"; \
-	echo "Sorting OpenAPI JSON for deterministic ordering..."; \
-	python3 scripts/sort_openapi_json.py "$(OPENAPI_OUT)"; \
+	@$(call start_server_and_wait,cargo run --bin hyperspot-server $(E2E_ARGS) -- --config config/quickstart.yaml,$(OPENAPI_URL),300) && \
+	echo "Fetching OpenAPI spec..." && \
+	mkdir -p $$(dirname "$(OPENAPI_OUT)") && \
+	curl -fsS "$(OPENAPI_URL)" -o "$(OPENAPI_OUT)" && \
+	echo "Sorting OpenAPI JSON for deterministic ordering..." && \
+	python3 scripts/sort_openapi_json.py "$(OPENAPI_OUT)" && \
 	echo "OpenAPI spec saved to $(OPENAPI_OUT)"
 
 # -------- Development and auto fix --------
