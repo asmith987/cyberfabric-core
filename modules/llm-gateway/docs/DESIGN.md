@@ -483,6 +483,7 @@ Gateway-specific error codes (mapped to Open Responses `code` field):
 | `budget_exceeded` | `invalid_request` | Tenant budget exhausted |
 | `rate_limited` | `too_many_requests` | Rate limit exceeded |
 | `request_blocked` | `invalid_request` | Blocked by pre-call hook |
+| `hook_timeout` | `server_error` | Hook plugin call timed out |
 | `output_validation_error` | `model_error` | Provider output does not conform to requested JSON schema |
 | `provider_error` | `model_error` | Provider returned error |
 | `provider_timeout` | `server_error` | Provider request timed out |
@@ -591,6 +592,13 @@ The Hook Plugin interface is defined in `llm-gateway-sdk` as a plugin client tra
 - Each hook plugin registers a GTS instance and scoped client under a stable instance ID of the form `gts.x.core.modkit.plugin.v1~x.llmgw.hook_plugin.v1~<vendor>.<pkg>.hook_plugin.v1`.
 - Gateway uses `choose_plugin_instance` to select the plugin matching the configured vendor with the lowest priority value.
 - Plugin unavailability (client not found after resolution) causes the request to fail with a `hook_unavailable` error — hooks are not bypassed silently.
+
+**Timeout enforcement**:
+
+- Both `pre_request` and `post_response` calls are subject to a configurable timeout enforced by the Gateway (not by the plugin itself).
+- `pre_request` timeout: the request fails with a `hook_timeout` error returned to the consumer. The timed-out plugin call is cancelled.
+- `post_response` timeout: a warning is logged but the response is not affected — `post_response` is observe-only, and the response has already been delivered to the consumer by the time `post_response` runs. The timed-out plugin call is cancelled.
+- The timeout value is configured per-module (not per-plugin) and applies uniformly to all hook plugin invocations.
 
 ### 3.4 Interactions & Sequences
 
@@ -1100,7 +1108,9 @@ sequenceDiagram
 
     C->>GW: POST /responses (...)
     GW->>HP: pre_call(request)
-    alt Blocked
+    alt Timeout exceeded
+        GW-->>C: hook_timeout
+    else Blocked
         HP-->>GW: reject
         GW-->>C: request_blocked
     else Allowed / Modified
@@ -1135,8 +1145,12 @@ sequenceDiagram
     OB-->>GW: Normalized response
     GW-->>C: Response
     GW->>HP: post_response(response)
-    HP->>HP: process response
-    HP-->>GW: ok
+    alt Timeout exceeded
+        GW->>GW: Log warning (response already delivered)
+    else Completed
+        HP->>HP: process response
+        HP-->>GW: ok
+    end
 ```
 
 #### Hook Plugin — Streaming
@@ -1158,6 +1172,9 @@ sequenceDiagram
 
     C->>GW: POST /responses (stream=true)
     GW->>HP: pre_call(request)
+    alt Timeout exceeded
+        GW-->>C: hook_timeout
+    else Allowed / Modified
     HP-->>GW: request (unchanged or modified)
     GW->>OB: Streaming request
     OB->>P: Request
@@ -1172,8 +1189,13 @@ sequenceDiagram
     GW-->>C: response.completed
     GW-->>C: [DONE]
     GW->>HP: post_response(full_assembled_response)
-    HP->>HP: process response
-    HP-->>GW: ok
+    alt Timeout exceeded
+        GW->>GW: Log warning (response already delivered)
+    else Completed
+        HP->>HP: process response
+        HP-->>GW: ok
+    end
+    end
 ```
 
 #### Rate Limiting
@@ -1345,6 +1367,7 @@ Gateway emits the following OpenTelemetry metrics (NFR `cpt-cf-llm-gateway-nfr-o
 | `llm_gateway_fallback_total` | `from_provider`, `to_provider`, `reason` | Primary provider fails and fallback is activated (`cpt-cf-llm-gateway-seq-provider-fallback-v1`) |
 | `llm_gateway_stream_abort_total` | `reason` (`client_disconnect`, `timeout`, `error`) | SSE stream terminates before completion |
 | `llm_gateway_hook_block_total` | `hook_type` (`pre_call`, `post_response`) | Hook plugin blocks a request (`cpt-cf-llm-gateway-fr-pre-call-interceptor-v1`) |
+| `llm_gateway_hook_timeout_total` | `hook_type` (`pre_call`, `post_response`) | Hook plugin call exceeds configured timeout |
 | `llm_gateway_budget_reserve_total` | — | Quota Manager `check_quota` is called before execution |
 | `llm_gateway_budget_settle_total` | — | Usage Tracker `report_usage` is called after execution |
 | `llm_gateway_schema_validation_fail_total` | `model`, `provider` | Structured output fails JSON Schema validation (`cpt-cf-llm-gateway-fr-structured-output-v1`) |
