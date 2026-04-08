@@ -152,6 +152,7 @@ pub struct RateLimitConfig {
     pub scope: RateLimitScope,
     pub strategy: RateLimitStrategy,
     pub cost: u32,
+    pub response_headers: bool,
 }
 
 #[domain_model]

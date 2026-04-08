@@ -134,6 +134,8 @@ pub struct RateLimitConfig {
     pub strategy: RateLimitStrategy,
     #[serde(default = "default_cost")]
     pub cost: u32,
+    #[serde(default = "default_true")]
+    pub response_headers: bool,
 }
 
 fn default_cost() -> u32 {
@@ -582,6 +584,7 @@ impl From<RateLimitConfig> for domain::RateLimitConfig {
             scope: v.scope.into(),
             strategy: v.strategy.into(),
             cost: v.cost,
+            response_headers: v.response_headers,
         }
     }
 }
@@ -845,6 +848,7 @@ impl From<domain::RateLimitConfig> for RateLimitConfig {
             scope: v.scope.into(),
             strategy: v.strategy.into(),
             cost: v.cost,
+            response_headers: v.response_headers,
         }
     }
 }

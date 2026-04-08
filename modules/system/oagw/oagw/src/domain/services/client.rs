@@ -228,6 +228,7 @@ fn domain_err_to_sdk(err: DomainError) -> ServiceGatewayError {
             detail,
             instance,
             retry_after_secs,
+            ..
         } => ServiceGatewayError::RateLimitExceeded {
             detail,
             instance,
@@ -463,6 +464,7 @@ fn rate_limit_config_to_domain(v: oagw_sdk::RateLimitConfig) -> model::RateLimit
             oagw_sdk::RateLimitStrategy::Degrade => model::RateLimitStrategy::Degrade,
         },
         cost: v.cost,
+        response_headers: v.response_headers,
     }
 }
 
@@ -732,6 +734,7 @@ fn rate_limit_config_to_sdk(v: model::RateLimitConfig) -> oagw_sdk::RateLimitCon
             model::RateLimitStrategy::Degrade => oagw_sdk::RateLimitStrategy::Degrade,
         },
         cost: v.cost,
+        response_headers: v.response_headers,
     }
 }
 
@@ -839,6 +842,9 @@ mod tests {
             detail: "too fast".into(),
             instance: "/api".into(),
             retry_after_secs: Some(30),
+            limit: None,
+            remaining: None,
+            reset_epoch: None,
         };
         let sdk_err = domain_err_to_sdk(err);
         match sdk_err {

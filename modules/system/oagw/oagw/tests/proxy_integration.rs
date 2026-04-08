@@ -407,6 +407,7 @@ async fn proxy_rate_limit_exceeded_returns_429() {
                 scope: RateLimitScope::Tenant,
                 strategy: RateLimitStrategy::Reject,
                 cost: 1,
+                response_headers: true,
             })
             .build(),
         )
@@ -1775,6 +1776,7 @@ async fn proxy_websocket_rate_limit_on_handshake() {
                 scope: RateLimitScope::Tenant,
                 strategy: RateLimitStrategy::Reject,
                 cost: 1,
+                response_headers: true,
             })
             .build(),
         )

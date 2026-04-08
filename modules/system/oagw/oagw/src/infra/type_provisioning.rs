@@ -203,6 +203,8 @@ struct RateLimitConfig {
     strategy: RateLimitStrategy,
     #[serde(default = "default_cost")]
     cost: u32,
+    #[serde(default = "default_true")]
+    response_headers: bool,
 }
 
 #[derive(Deserialize)]
@@ -484,6 +486,7 @@ impl From<RateLimitConfig> for domain::RateLimitConfig {
             scope: v.scope.into(),
             strategy: v.strategy.into(),
             cost: v.cost,
+            response_headers: v.response_headers,
         }
     }
 }

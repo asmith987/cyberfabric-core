@@ -162,10 +162,10 @@ Prevents abuse, cost overruns, and protects external service agreements. Maintai
 3. [ ] - `p2` - Refill tokens: `elapsed = now - last_update`, `new_tokens = elapsed_seconds × refill_rate`, `tokens = min(tokens + new_tokens, capacity)`, `last_update = now` - `inst-tb-3`
 4. [ ] - `p2` - **IF** `tokens >= cost` - `inst-tb-4`
    1. [ ] - `p2` - Deduct: `tokens -= cost` - `inst-tb-4a`
-   2. [ ] - `p2` - **RETURN** Allow with `remaining = floor(tokens)`, `limit = capacity`, `reset = window_end_timestamp` - `inst-tb-4b`
+   2. [ ] - `p2` - **RETURN** Allow with `remaining = floor(tokens)`, `limit = capacity`, `reset = now + ceil((capacity - tokens) / refill_rate)` (Unix epoch timestamp when bucket fully replenished; token buckets refill continuously so there is no discrete window boundary) - `inst-tb-4b`
 5. [ ] - `p2` - **ELSE** (insufficient tokens) - `inst-tb-5`
    1. [ ] - `p2` - Calculate `retry_after = ceil((cost - tokens) / refill_rate)` - `inst-tb-5a`
-   2. [ ] - `p2` - **RETURN** Deny with `retry_after`, `limit = capacity`, `remaining = 0`, `reset = window_end_timestamp` - `inst-tb-5b`
+   2. [ ] - `p2` - **RETURN** Deny with `retry_after`, `limit = capacity`, `remaining = 0`, `reset = now + retry_after` (Unix epoch timestamp) - `inst-tb-5b`
 
 ### Hierarchical Rate Limit Merge
 

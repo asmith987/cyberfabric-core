@@ -138,6 +138,7 @@ pub struct RateLimitConfig {
     pub scope: RateLimitScope,
     pub strategy: RateLimitStrategy,
     pub cost: u32,
+    pub response_headers: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

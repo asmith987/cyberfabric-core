@@ -2603,6 +2603,7 @@ mod tests {
             scope: RateLimitScope::Tenant,
             strategy: RateLimitStrategy::Reject,
             cost: 1,
+            response_headers: true,
         }
     }
 
