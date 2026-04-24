@@ -700,7 +700,7 @@ ci: fmt clippy test-no-macros test-macros test-db deny test-users-info-pg lychee
 
 # Build the hyperspot-server release binary using the stable toolchain.
 cargo-build:
-	cargo +stable build --release --bin hyperspot-server $(E2E_ARGS)
+	cargo build --release --bin hyperspot-server $(E2E_ARGS)
 
 # Split debug symbols into separate artifact(s) and strip the binary.
 # Requires platform tools: objcopy (Linux), dsymutil+strip (macOS).
