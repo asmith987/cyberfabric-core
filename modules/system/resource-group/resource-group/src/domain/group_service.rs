@@ -15,7 +15,7 @@
 use std::sync::Arc;
 
 use authz_resolver_sdk::pep::{PolicyEnforcer, ResourceType};
-use modkit_db::secure::DBRunner;
+use modkit_db::secure::{DBRunner, TxConfig};
 use modkit_odata::{ODataQuery, Page};
 use modkit_security::{SecurityContext, pep_properties};
 use resource_group_sdk::TENANT_RG_TYPE_PATH;
@@ -144,7 +144,7 @@ impl<GR: GroupRepositoryTrait, TR: TypeRepositoryTrait> GroupService<GR, TR> {
         // @cpt-begin:cpt-cf-resource-group-flow-entity-hier-create-group:p1:inst-create-group-10
         // @cpt-begin:cpt-cf-resource-group-flow-entity-hier-create-group:p1:inst-create-group-9
         // @cpt-begin:cpt-cf-resource-group-flow-entity-hier-create-group:p1:inst-create-group-11
-        db.transaction_serializable_with_retry(DomainError::is_serialization_failure, |tx| {
+        db.transaction_with_retry(TxConfig::serializable(), DomainError::db_err, |tx| {
             let req = req.clone();
             let profile = profile.clone();
             let group_repo = group_repo.clone();
@@ -236,7 +236,7 @@ impl<GR: GroupRepositoryTrait, TR: TypeRepositoryTrait> GroupService<GR, TR> {
         let type_repo = self.type_repo.clone();
         let types_registry = self.types_registry.clone();
 
-        db.transaction_serializable_with_retry(DomainError::is_serialization_failure, |tx| {
+        db.transaction_with_retry(TxConfig::serializable(), DomainError::db_err, |tx| {
             let req = req.clone();
             let scope = scope.clone();
             let profile = profile.clone();
@@ -282,7 +282,7 @@ impl<GR: GroupRepositoryTrait, TR: TypeRepositoryTrait> GroupService<GR, TR> {
         // @cpt-begin:cpt-cf-resource-group-flow-entity-hier-move-group:p1:inst-move-group-12
         // @cpt-begin:cpt-cf-resource-group-flow-entity-hier-move-group:p1:inst-move-group-11
         // @cpt-begin:cpt-cf-resource-group-flow-entity-hier-move-group:p1:inst-move-group-13
-        db.transaction_serializable_with_retry(DomainError::is_serialization_failure, |tx| {
+        db.transaction_with_retry(TxConfig::serializable(), DomainError::db_err, |tx| {
             let profile = profile.clone();
             let group_repo = group_repo.clone();
             let type_repo = type_repo.clone();
@@ -330,7 +330,7 @@ impl<GR: GroupRepositoryTrait, TR: TypeRepositoryTrait> GroupService<GR, TR> {
         let db = self.db.db();
         let group_repo = self.group_repo.clone();
 
-        db.transaction_serializable_with_retry(DomainError::is_serialization_failure, |tx| {
+        db.transaction_with_retry(TxConfig::serializable(), DomainError::db_err, |tx| {
             let scope = scope.clone();
             let group_repo = group_repo.clone();
             Box::pin(async move {
@@ -485,7 +485,7 @@ impl<GR: GroupRepositoryTrait, TR: TypeRepositoryTrait> GroupService<GR, TR> {
         let type_repo = self.type_repo.clone();
         let types_registry = self.types_registry.clone();
 
-        db.transaction_serializable_with_retry(DomainError::is_serialization_failure, |tx| {
+        db.transaction_with_retry(TxConfig::serializable(), DomainError::db_err, |tx| {
             let req = req.clone();
             let profile = profile.clone();
             let group_repo = group_repo.clone();

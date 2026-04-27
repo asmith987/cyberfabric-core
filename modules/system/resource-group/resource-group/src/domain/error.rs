@@ -69,29 +69,26 @@ pub enum DomainError {
     #[error("Access denied: {message}")]
     AccessDenied { message: String },
 
-    #[error("Database error: {message}")]
-    Database { message: String },
+    #[error("Database error: {0}")]
+    Database(sea_orm::DbErr),
 
     #[error("Internal error")]
     InternalError,
 }
 
 impl DomainError {
-    /// Returns `true` if this error represents a serialization failure
-    /// (SQLSTATE `40001`) that is safe to retry.
+    /// Returns the underlying `DbErr` if this is a database failure.
     ///
-    /// Covers `PostgreSQL` `SERIALIZABLE` conflicts and `MySQL`/`MariaDB` deadlocks.
+    /// Used as the extractor for
+    /// [`modkit_db::Db::transaction_with_retry`], which feeds the
+    /// `DbErr` into [`modkit_db::contention::is_retryable_contention`] for
+    /// backend-aware retry decisions (`PostgreSQL` serialization failures /
+    /// deadlocks, `MySQL`/`InnoDB` deadlocks, `SQLite` `BUSY`/`BUSY_SNAPSHOT`).
     #[must_use]
-    pub fn is_serialization_failure(&self) -> bool {
+    pub fn db_err(&self) -> Option<&sea_orm::DbErr> {
         match self {
-            DomainError::Database { message } => {
-                let msg = message.to_ascii_lowercase();
-                msg.contains("40001")
-                    || msg.contains("could not serialize access")
-                    || msg.contains("deadlock detected")
-                    || msg.contains("deadlock found when trying to get lock")
-            }
-            _ => false,
+            DomainError::Database(err) => Some(err),
+            _ => None,
         }
     }
 
@@ -172,10 +169,14 @@ impl DomainError {
         }
     }
 
+    /// Wrap an arbitrary message as a `DomainError::Database`.
+    ///
+    /// Used by infra code that produces non-`DbErr` failures (e.g., a row that
+    /// the schema guarantees exists is unexpectedly missing). The message is
+    /// stored inside `DbErr::Custom`, preserving the typed-`DbErr` invariant
+    /// expected by [`Self::db_err`].
     pub fn database(message: impl Into<String>) -> Self {
-        Self::Database {
-            message: message.into(),
-        }
+        Self::Database(sea_orm::DbErr::Custom(message.into()))
     }
 }
 
@@ -210,22 +211,25 @@ impl From<DomainError> for ResourceGroupError {
                 ResourceGroupError::tenant_incompatibility(message)
             }
             DomainError::AccessDenied { .. } => ResourceGroupError::access_denied(),
-            DomainError::Database { .. } | DomainError::InternalError => {
-                ResourceGroupError::internal()
-            }
+            DomainError::Database(_) | DomainError::InternalError => ResourceGroupError::internal(),
         }
     }
 }
 
 impl From<sea_orm::DbErr> for DomainError {
     fn from(e: sea_orm::DbErr) -> Self {
-        DomainError::database(format!("{e}"))
+        DomainError::Database(e)
     }
 }
 
 impl From<modkit_db::DbError> for DomainError {
     fn from(e: modkit_db::DbError) -> Self {
-        DomainError::database(format!("{e}"))
+        // Preserve the typed `DbErr` when present (so retry detection via
+        // `db_err()` stays accurate); otherwise fall back to a `Custom` wrap.
+        match e {
+            modkit_db::DbError::Sea(db_err) => DomainError::Database(db_err),
+            other => DomainError::database(other.to_string()),
+        }
     }
 }
 
