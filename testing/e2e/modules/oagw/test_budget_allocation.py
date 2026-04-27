@@ -8,6 +8,7 @@ Tests cover:
 """
 import pytest
 import httpx
+from typing import Optional
 
 from .helpers import (
     create_upstream,
@@ -22,8 +23,8 @@ from .helpers import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _rl(rate: int, window: str = "minute", budget: dict | None = None,
-        sharing: str | None = None, **extra) -> dict:
+def _rl(rate: int, window: str = "minute", budget: Optional[dict] = None,
+        sharing: Optional[str] = None, **extra) -> dict:
     """Build a rate_limit payload."""
     rl: dict = {
         "algorithm": "token_bucket",
