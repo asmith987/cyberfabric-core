@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "cf-oagw"
-version = "0.2.23"
+version = "0.2.24"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -2123,6 +2123,7 @@ dependencies = [
  "cf-credstore-sdk",
  "cf-modkit",
  "cf-modkit-auth",
+ "cf-modkit-canonical-errors",
  "cf-modkit-http",
  "cf-modkit-macros",
  "cf-modkit-security",
@@ -2167,7 +2168,7 @@ dependencies = [
 
 [[package]]
 name = "cf-oagw-sdk"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "async-openai",
  "async-trait",
