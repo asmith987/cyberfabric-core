@@ -24,11 +24,11 @@ decision-makers: Constructor Tech
 - [Type Map](#type-map)
 - [Schemas](#schemas)
   - [RG Type Contract — `gts.cf.core.rg.type.v1~`](#rg-type-contract--gtscfcorergtypev1)
-  - [Tenant — `gts.y.core.tn.tenant.v1~`](#tenant--gtsycoretntenantv1)
-  - [Department — `gts.w.core.org.department.v1~`](#department--gtswcoreorgdepartmentv1)
+  - [Tenant — `gts.cf.core.tn.tenant.v1~`](#tenant--gtscfcoretntenantv1)
+  - [Department — `gts.cf.core.org.department.v1~`](#department--gtscfcoreorgdepartmentv1)
   - [Branch — `gts.cf.core.rg.branch.v1~`](#branch--gtscfcorergbranchv1)
-  - [User — `gts.z.core.idp.user.v1~`](#user--gtszcoreidpuserv1)
-  - [Course — `gts.z.core.lms.course.v1~`](#course--gtszcorelmscoursev1)
+  - [User — `gts.cf.core.idp.user.v1~`](#user--gtscfcoreidpuserv1)
+  - [Course — `gts.cf.core.lms.course.v1~`](#course--gtscfcorelmscoursev1)
 - [Chained RG Type Schemas](#chained-rg-type-schemas)
   - [Tenant as RG Type — `gts.cf.core.rg.type.v1~y.core.tn.tenant.v1~`](#tenant-as-rg-type--gtscfcorergtypev1ycoretntenantv1)
   - [Department as RG Type — `gts.cf.core.rg.type.v1~w.core.org.department.v1~`](#department-as-rg-type--gtscfcorergtypev1wcoreorgdepartmentv1)
@@ -136,15 +136,15 @@ Chosen option: "GTS with traits pattern", because it is the only option that pro
 
 | GTS Type Path | Kind | Vendor |
 |---|---|---|
-| `gts.cf.core.rg.type.v1~` | RG base contract | x (platform) |
-| `gts.y.core.tn.tenant.v1~` | entity type | y (tenant service) |
-| `gts.w.core.org.department.v1~` | entity type | w (org service) |
-| `gts.cf.core.rg.branch.v1~` | entity type | x (platform) |
-| `gts.z.core.idp.user.v1~` | resource type | z (IDP) |
-| `gts.z.core.lms.course.v1~` | resource type | z (LMS) |
-| `gts.cf.core.rg.type.v1~y.core.tn.tenant.v1~` | chained RG type | x + y |
-| `gts.cf.core.rg.type.v1~w.core.org.department.v1~` | chained RG type | x + w |
-| `gts.cf.core.rg.type.v1~cf.core.rg.branch.v1~` | chained RG type | x + x |
+| `gts.cf.core.rg.type.v1~` | RG base contract | CyberFabric |
+| `gts.cf.core.tn.tenant.v1~` | entity type | CyberFabric |
+| `gts.cf.core.org.department.v1~` | entity type | CyberFabric |
+| `gts.cf.core.rg.branch.v1~` | entity type | CyberFabric |
+| `gts.cf.core.idp.user.v1~` | resource type | CyberFabric |
+| `gts.cf.core.lms.course.v1~` | resource type | CyberFabric |
+| `gts.cf.core.rg.type.v1~y.core.tn.tenant.v1~` | chained RG type | y |
+| `gts.cf.core.rg.type.v1~w.core.org.department.v1~` | chained RG type | w |
+| `gts.cf.core.rg.type.v1~cf.core.rg.branch.v1~` | chained RG type | CyberFabric |
 
 ## Schemas
 
@@ -226,11 +226,11 @@ Base contract for all RG type definitions. Traits define topology rules; propert
 }
 ```
 
-### Tenant — `gts.y.core.tn.tenant.v1~`
+### Tenant — `gts.cf.core.tn.tenant.v1~`
 
 ```json
 {
-  "$id": "gts://gts.y.core.tn.tenant.v1~",
+  "$id": "gts://gts.cf.core.tn.tenant.v1~",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Tenant",
   "type": "object",
@@ -244,11 +244,11 @@ Base contract for all RG type definitions. Traits define topology rules; propert
 }
 ```
 
-### Department — `gts.w.core.org.department.v1~`
+### Department — `gts.cf.core.org.department.v1~`
 
 ```json
 {
-  "$id": "gts://gts.w.core.org.department.v1~",
+  "$id": "gts://gts.cf.core.org.department.v1~",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Department",
   "type": "object",
@@ -278,11 +278,11 @@ Base contract for all RG type definitions. Traits define topology rules; propert
 }
 ```
 
-### User — `gts.z.core.idp.user.v1~`
+### User — `gts.cf.core.idp.user.v1~`
 
 ```json
 {
-  "$id": "gts://gts.z.core.idp.user.v1~",
+  "$id": "gts://gts.cf.core.idp.user.v1~",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "User",
   "type": "object",
@@ -296,11 +296,11 @@ Base contract for all RG type definitions. Traits define topology rules; propert
 }
 ```
 
-### Course — `gts.z.core.lms.course.v1~`
+### Course — `gts.cf.core.lms.course.v1~`
 
 ```json
 {
-  "$id": "gts://gts.z.core.lms.course.v1~",
+  "$id": "gts://gts.cf.core.lms.course.v1~",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Course",
   "type": "object",
@@ -314,7 +314,7 @@ Base contract for all RG type definitions. Traits define topology rules; propert
 
 ## Chained RG Type Schemas
 
-When a type is registered as an RG type, it chains with the base contract via a **single `$ref`** and provides: (1) trait values via `x-gts-traits`, and (2) type-specific fields via inline `properties.metadata` override. Entity schemas (e.g. `gts.y.core.tn.tenant.v1~`) are registered in GTS for reference but are **NOT `$ref`'d** from chained types — the `metadata` properties are defined inline. The `metadata` sub-object uses `additionalProperties: false` to reject unknown fields (see [Finding 3](#finding-3-entity-specific-field-validation-at-gts-level-via-metadata-object)).
+When a type is registered as an RG type, it chains with the base contract via a **single `$ref`** and provides: (1) trait values via `x-gts-traits`, and (2) type-specific fields via inline `properties.metadata` override. Entity schemas (e.g. `gts.cf.core.tn.tenant.v1~`) are registered in GTS for reference but are **NOT `$ref`'d** from chained types — the `metadata` properties are defined inline. The `metadata` sub-object uses `additionalProperties: false` to reject unknown fields (see [Finding 3](#finding-3-entity-specific-field-validation-at-gts-level-via-metadata-object)).
 
 ### Tenant as RG Type — `gts.cf.core.rg.type.v1~y.core.tn.tenant.v1~`
 
@@ -338,7 +338,7 @@ When a type is registered as an RG type, it chains with the base contract via a 
       "x-gts-traits": {
         "can_be_root": true,
         "allowed_parents": ["gts.cf.core.rg.type.v1~y.core.tn.tenant.v1~"],
-        "allowed_memberships": ["gts.z.core.idp.user.v1~"]
+        "allowed_memberships": ["gts.cf.core.idp.user.v1~"]
       }
     }
   ]
@@ -372,7 +372,7 @@ When a type is registered as an RG type, it chains with the base contract via a 
       "x-gts-traits": {
         "can_be_root": false,
         "allowed_parents": ["gts.cf.core.rg.type.v1~y.core.tn.tenant.v1~"],
-        "allowed_memberships": ["gts.z.core.idp.user.v1~"]
+        "allowed_memberships": ["gts.cf.core.idp.user.v1~"]
       }
     }
   ]
@@ -405,7 +405,7 @@ When a type is registered as an RG type, it chains with the base contract via a 
       "x-gts-traits": {
         "can_be_root": false,
         "allowed_parents": ["gts.cf.core.rg.type.v1~w.core.org.department.v1~"],
-        "allowed_memberships": ["gts.z.core.idp.user.v1~", "gts.z.core.lms.course.v1~"]
+        "allowed_memberships": ["gts.cf.core.idp.user.v1~", "gts.cf.core.lms.course.v1~"]
       }
     }
   ]
