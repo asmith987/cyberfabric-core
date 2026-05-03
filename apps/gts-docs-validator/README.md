@@ -10,8 +10,14 @@ This complements the Dylint-based DE0901 lint that validates GTS identifiers in 
 # Basic validation
 gts-docs-validator docs modules libs examples
 
-# With vendor validation (ensures all IDs use expected vendor)
-gts-docs-validator --vendor x docs modules libs examples
+# With vendor validation (single vendor)
+gts-docs-validator --vendor cf docs modules libs examples
+
+# With multiple allowed vendors (comma-separated)
+gts-docs-validator --vendor cf,example docs modules libs examples
+
+# Multiple --vendor flags are also supported
+gts-docs-validator --vendor cf --vendor example docs modules libs examples
 
 # With exclusions
 gts-docs-validator --exclude "target/*" --exclude "docs/api/*" .
@@ -27,7 +33,7 @@ gts-docs-validator --verbose docs
 
 ```bash
 make gts-docs         # Validate GTS IDs (structural only)
-make gts-docs-vendor  # Validate with --vendor x check
+make gts-docs-vendor  # Validate with --vendor cf,example check
 make gts-docs-test    # Run unit tests
 ```
 
@@ -35,7 +41,7 @@ make gts-docs-test    # Run unit tests
 
 | Option | Description |
 |--------|-------------|
-| `--vendor <VENDOR>` | Expected vendor for all GTS IDs (e.g., `--vendor x`) |
+| `--vendor <VENDOR>` | Allowed vendor(s) for GTS IDs. Comma-separated or repeated (e.g., `--vendor cf,example`) |
 | `--exclude <PATTERN>` | Glob patterns to exclude (can be repeated) |
 | `--json` | Output results as JSON |
 | `--verbose` | Show file scanning progress |

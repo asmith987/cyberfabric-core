@@ -6,14 +6,20 @@
 //! # Usage
 //!
 //! ```bash
-//! # Validate docs with vendor filter
-//! gts-docs-validator --vendor x docs modules libs examples
+//! # Validate docs with a single vendor
+//! gts-docs-validator --vendor cf docs modules libs examples
+//!
+//! # Validate docs with multiple allowed vendors (comma-separated)
+//! gts-docs-validator --vendor cf,example docs modules libs examples
+//!
+//! # Multiple --vendor flags are also supported
+//! gts-docs-validator --vendor cf --vendor example docs modules libs examples
 //!
 //! # With exclusions
-//! gts-docs-validator --vendor x --exclude "target/*" --exclude "docs/api/*" .
+//! gts-docs-validator --vendor cf --exclude "target/*" --exclude "docs/api/*" .
 //!
 //! # JSON output
-//! gts-docs-validator --vendor x --json docs
+//! gts-docs-validator --vendor cf,example --json docs
 //! ```
 
 // CLI tools are expected to print to stdout/stderr
@@ -47,12 +53,14 @@ struct Cli {
     #[arg(value_name = "PATH")]
     paths: Vec<PathBuf>,
 
-    /// Expected vendor for all GTS IDs (validates vendor matches)
-    /// Example: --vendor x ensures all IDs use vendor "x"
+    /// Allowed vendor(s) for GTS IDs.
+    /// Accepts a single vendor, comma-separated list, or repeated flags.
+    /// Examples: --vendor cf   --vendor cf,example   --vendor cf --vendor example
     ///
-    /// Note: Example vendors are always tolerated: acme, globex, example, demo, test, sample, tutorial
-    #[arg(long)]
-    vendor: Option<String>,
+    /// Note: Example vendors (acme, globex, example, demo, test, sample, tutorial)
+    /// are always tolerated by the underlying validator.
+    #[arg(long, action = clap::ArgAction::Append)]
+    vendor: Vec<String>,
 
     /// Exclude patterns (can be specified multiple times)
     /// Supports glob patterns. Example: --exclude "target/*" --exclude "docs/api/*"
@@ -115,9 +123,17 @@ fn main() -> ExitCode {
     fs_config.max_file_size = cli.max_file_size;
 
     let mut validation_config = ValidationConfig::default();
-    validation_config.vendor_policy = match cli.vendor {
-        Some(v) => VendorPolicy::MustMatch(v),
-        None => VendorPolicy::Any,
+    let vendors: Vec<String> = cli
+        .vendor
+        .iter()
+        .flat_map(|v| v.split(','))
+        .map(|v| v.trim().to_owned())
+        .filter(|v| !v.is_empty())
+        .collect();
+    validation_config.vendor_policy = match vendors.len() {
+        0 => VendorPolicy::Any,
+        1 => VendorPolicy::MustMatch(vendors.into_iter().next().unwrap()),
+        _ => VendorPolicy::AllowList(vendors),
     };
     validation_config.scan_keys = cli.scan_keys;
     validation_config.discovery_mode = if cli.strict {
@@ -134,8 +150,12 @@ fn main() -> ExitCode {
             .map(|p: &PathBuf| p.display().to_string())
             .collect();
         eprintln!("Scanning paths: {}", path_list.join(", "));
-        if let VendorPolicy::MustMatch(ref vendor) = validation_config.vendor_policy {
-            eprintln!("Expected vendor: {vendor}");
+        match &validation_config.vendor_policy {
+            VendorPolicy::MustMatch(vendor) => eprintln!("Expected vendor: {vendor}"),
+            VendorPolicy::AllowList(vendors) => {
+                eprintln!("Allowed vendors: {}", vendors.join(", "));
+            }
+            _ => {}
         }
     }
 
