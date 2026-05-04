@@ -341,19 +341,40 @@ impl<R: TenantRepo> TenantService<R> {
                         );
                         return HardDeleteOutcome::IdpTerminal;
                     }
-                    DeprovisionFailure::UnsupportedOperation { .. }
-                    | DeprovisionFailure::NotFound { .. } => {
-                        // `UnsupportedOperation`: plugin doesn't
-                        // implement deprovision; nothing to do IdP-side.
-                        // `NotFound`: vendor reports the tenant is
-                        // already gone (possibly from a previous
-                        // attempt that lost its claim post-call). Both
-                        // map to "skip IdP step, continue with DB
-                        // teardown" — the `am.dependency_health`
-                        // metric label distinguishes them, and the
-                        // outer `idp_skipped = true` signals the DB
-                        // teardown step to translate `Cleaned` into
-                        // `IdpUnsupported`.
+                    DeprovisionFailure::UnsupportedOperation { .. } => {
+                        // `UnsupportedOperation` is **only** safe to
+                        // treat as "skip IdP, continue local teardown"
+                        // when the deployment has explicitly opted
+                        // out of an IdP (`cfg.idp.required = false` →
+                        // wired to `NoopProvisioner`). When a real
+                        // plugin returns this, the vendor is
+                        // signalling that it does not support
+                        // deprovision but external state may exist —
+                        // hard-deleting the AM row would orphan that
+                        // state. Defer to the next tick instead so an
+                        // operator (or a redeployed plugin that
+                        // implements deprovision) can resolve it.
+                        if self.cfg.idp.required {
+                            warn!(
+                                target: "am.retention",
+                                tenant_id = %row.id,
+                                "hard_delete deferred: IdP plugin returned UnsupportedOperation but \
+                                 idp.required=true; refusing to orphan vendor-side state"
+                            );
+                            return HardDeleteOutcome::IdpRetryable;
+                        }
+                        // No-IdP deployment: safe to skip the IdP
+                        // step and continue with DB teardown. Falls
+                        // through to `Cleaned → IdpUnsupported`
+                        // translation below.
+                        true
+                    }
+                    DeprovisionFailure::NotFound { .. } => {
+                        // Vendor reports the tenant is already gone
+                        // (possibly from a previous attempt that lost
+                        // its claim post-call). Always success-
+                        // equivalent, regardless of `cfg.idp.required`
+                        // — there is nothing left to orphan.
                         true
                     }
                     // `DeprovisionFailure` is `#[non_exhaustive]`; the

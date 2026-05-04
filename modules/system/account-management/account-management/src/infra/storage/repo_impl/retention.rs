@@ -147,11 +147,22 @@ pub(super) async fn scan_retention_due(
                     let claimable = Condition::any()
                         .add(tenants::Column::ClaimedBy.is_null())
                         .add(tenants::Column::ClaimedAt.lte(stale_cutoff));
+                    // `due_check` is also re-asserted in the claim
+                    // UPDATE below, so a peer transaction that
+                    // extends `retention_window_secs` or moves
+                    // `deletion_scheduled_at` forward between this
+                    // SELECT and the UPDATE cannot leave the row
+                    // claim-eligible against the new (later) due
+                    // instant. The clone is cheap (FNV-style byte
+                    // duplication of the bound parameters); it
+                    // avoids running the predicate-construction
+                    // ladder twice while keeping both filter sites
+                    // semantically identical.
                     let scan_filter = Condition::all()
                         .add(tenants::Column::Status.eq(TenantStatus::Deleted.as_smallint()))
                         .add(tenants::Column::DeletionScheduledAt.is_not_null())
                         .add(claimable.clone())
-                        .add(due_check);
+                        .add(due_check.clone());
 
                     // No `FOR UPDATE SKIP LOCKED` here: the
                     // claim-and-go correctness relies on the
@@ -262,6 +273,18 @@ pub(super) async fn scan_retention_due(
                                         .eq(TenantStatus::Deleted.as_smallint()),
                                 )
                                 .add(tenants::Column::DeletionScheduledAt.is_not_null())
+                                // Re-assert the full due predicate here —
+                                // not just `Status` / `DeletionScheduledAt` —
+                                // so a concurrent transaction that extends
+                                // `retention_window_secs` or moves
+                                // `deletion_scheduled_at` forward between
+                                // the SELECT and this UPDATE cannot leave
+                                // the row claim-eligible against the new
+                                // (later) due instant. Without this, a
+                                // tenant whose retention window was just
+                                // extended could be hard-deleted on the
+                                // very next reaper tick.
+                                .add(due_check)
                                 .add(claimable),
                         )
                         .secure()

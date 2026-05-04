@@ -2311,23 +2311,29 @@ async fn hard_delete_batch_marks_idp_terminal_failure_as_failed() {
 
 /// F3 -- finalization-TX failure injection (saga step 3 abort).
 ///
-/// AC#3 calls for the `create_child` saga to leave the
-/// `Provisioning` row in place when `repo.activate_tenant` fails
-/// post-IdP-provision so the reaper can compensate. The injection
-/// goes through `FakeTenantRepo::expect_next_activation_failure`,
-/// which arms the next call to return `DomainError::Internal` exactly
-/// once.
+/// Saga full-compensation contract: once `idp.provision_tenant`
+/// has succeeded, any saga step-3 failure
+/// (`load_ancestor_chain` / `activate_tenant`) MUST trigger
+/// best-effort `deprovision_tenant` + row compensation **inside
+/// the saga** so vendor-side state is not orphaned until the next
+/// reaper tick. The original error from step 3 still propagates;
+/// the reaper remains the last-resort cleanup if either
+/// compensation step fails (e.g. a peer reaper claimed the row
+/// mid-activation, or the `IdP` returned `Retryable` / `Terminal`).
 #[tokio::test]
-async fn create_child_finalization_tx_failure_leaves_provisioning_row_in_db() {
+async fn create_child_finalization_tx_failure_compensates_idp_and_row() {
     let root = Uuid::from_u128(0x100);
     let child = Uuid::from_u128(0xF300);
     let repo = Arc::new(FakeTenantRepo::with_root(root));
     repo.expect_next_activation_failure("simulated SERIALIZABLE abort");
-    let svc = svc_with(
+    let idp = Arc::new(FakeIdpProvisioner::new(FakeOutcome::Ok));
+    let svc = TenantService::new(
         repo.clone(),
-        FakeOutcome::Ok,
-        AccountManagementConfig::default(),
+        idp.clone(),
         Arc::new(InertResourceOwnershipChecker),
+        crate::domain::tenant_type::inert_tenant_type_checker(),
+        mock_enforcer(),
+        AccountManagementConfig::default(),
     );
 
     let result = svc
@@ -2337,15 +2343,192 @@ async fn create_child_finalization_tx_failure_leaves_provisioning_row_in_db() {
         matches!(result, Err(DomainError::Internal { .. })),
         "activate_tenant failure must surface as Internal, got {result:?}"
     );
-    // Ambiguous outcome -- provisioning row stays so the reaper
-    // (or operator) owns compensation.
+    // Saga-side compensation MUST have invoked the IdP's
+    // `deprovision_tenant` exactly once for the failed
+    // provisioning row — otherwise vendor-side state is orphaned
+    // until the next reaper tick.
+    let deprovision_calls = idp.deprovision_calls.lock().expect("lock").clone();
+    assert_eq!(
+        deprovision_calls.as_slice(),
+        &[child],
+        "saga MUST best-effort deprovision the IdP after step-3 failure; got {deprovision_calls:?}"
+    );
+    // Row delete is best-effort and runs only after the IdP
+    // confirms cleanup. With `FakeIdpProvisioner::Ok` the
+    // happy-path compensation succeeds end-to-end and the row is
+    // gone — no reaper hop needed for this scenario.
+    let provisioning_rows = repo.snapshot_provisioning_rows();
+    assert!(
+        provisioning_rows.is_empty(),
+        "saga MUST best-effort delete the provisioning row after IdP cleanup; \
+         got {provisioning_rows:?}"
+    );
+}
+
+/// Saga-side compensation MUST be best-effort: when the `IdP`
+/// returns `Retryable` (vendor-side retry needed), the saga MUST
+/// NOT delete the local provisioning row — the reaper owns that
+/// retry. Pins the contract that compensation degrades to the
+/// reaper instead of orphaning vendor-side state.
+#[tokio::test]
+async fn create_child_finalization_failure_with_retryable_idp_leaves_row_for_reaper() {
+    let root = Uuid::from_u128(0x100);
+    let child = Uuid::from_u128(0xF301);
+    let repo = Arc::new(FakeTenantRepo::with_root(root));
+    repo.expect_next_activation_failure("simulated SERIALIZABLE abort");
+    let idp = Arc::new(FakeIdpProvisioner::new(FakeOutcome::Ok));
+    // Provision OK (saga step 2), but compensation deprovision
+    // returns Retryable (vendor-side retry needed). Saga must NOT
+    // delete the row in this case — leave it for the reaper.
+    idp.set_deprovision_outcome(FakeDeprovisionOutcome::Retryable);
+    let svc = TenantService::new(
+        repo.clone(),
+        idp.clone(),
+        Arc::new(InertResourceOwnershipChecker),
+        crate::domain::tenant_type::inert_tenant_type_checker(),
+        mock_enforcer(),
+        AccountManagementConfig::default(),
+    );
+
+    let result = svc
+        .create_child(&ctx_for(root), child_input(child, root))
+        .await;
+    assert!(
+        matches!(result, Err(DomainError::Internal { .. })),
+        "activate_tenant failure must surface as Internal, got {result:?}"
+    );
+    // IdP compensation was attempted exactly once.
+    assert_eq!(
+        idp.deprovision_calls.lock().expect("lock").len(),
+        1,
+        "saga MUST attempt best-effort IdP compensation"
+    );
+    // Row MUST remain — the IdP's `Retryable` signals vendor-side
+    // state still exists; deleting locally would orphan it. The
+    // reaper owns the retry from here.
     let provisioning_rows = repo.snapshot_provisioning_rows();
     assert_eq!(
         provisioning_rows.len(),
         1,
-        "provisioning row must remain on finalization-TX failure"
+        "provisioning row MUST be left for the reaper when IdP compensation is non-clean; \
+         got {provisioning_rows:?}"
     );
     assert_eq!(provisioning_rows[0].id, child);
+}
+
+// ---------------------------------------------------------------------------
+// `cfg.idp.required` gates `UnsupportedOperation` semantics
+// ---------------------------------------------------------------------------
+//
+// `DeprovisionFailure::UnsupportedOperation` is only safe to map
+// to "skip IdP, continue local teardown" when the deployment
+// opted out of an IdP entirely (`idp.required = false` → wired to
+// `NoopProvisioner`). When a real plugin returns this variant,
+// vendor-side state may still exist and the AM row MUST NOT be
+// removed locally — the retention pipeline defers (`IdpRetryable`)
+// and the reaper parks (`Terminal`, operator action required).
+
+#[tokio::test]
+async fn hard_delete_batch_defers_unsupported_when_idp_required_true() {
+    use crate::config::IdpConfig;
+
+    let root = Uuid::from_u128(0x100);
+    let repo = Arc::new(FakeTenantRepo::with_root(root));
+    let tenant = repo.seed_soft_deleted_child_due_for_hard_delete(root);
+    let idp = Arc::new(FakeIdpProvisioner::new(FakeOutcome::Ok));
+    idp.set_deprovision_outcome(FakeDeprovisionOutcome::Unsupported);
+    let svc = TenantService::new(
+        repo.clone(),
+        idp,
+        Arc::new(InertResourceOwnershipChecker),
+        crate::domain::tenant_type::inert_tenant_type_checker(),
+        mock_enforcer(),
+        AccountManagementConfig {
+            retention: crate::config::RetentionConfig {
+                default_window_secs: 0,
+                ..crate::config::RetentionConfig::default()
+            },
+            idp: IdpConfig { required: true },
+            ..AccountManagementConfig::default()
+        },
+    );
+
+    let res = svc.hard_delete_batch(64).await;
+    assert_eq!(res.processed, 1);
+    assert_eq!(
+        res.cleaned, 0,
+        "row MUST NOT be cleaned when IdP returns UnsupportedOperation under idp.required=true \
+         (would orphan vendor-side state)"
+    );
+    assert_eq!(
+        res.deferred, 1,
+        "UnsupportedOperation under idp.required=true MUST classify as IdpRetryable (deferred); \
+         got {res:?}"
+    );
+    assert!(
+        repo.find_by_id_unchecked(tenant).is_some(),
+        "row MUST remain after UnsupportedOperation under idp.required=true"
+    );
+}
+
+#[tokio::test]
+async fn reaper_marks_unsupported_terminal_when_idp_required_true() {
+    use crate::config::IdpConfig;
+
+    let root = Uuid::from_u128(0x100);
+    let stuck = Uuid::from_u128(0x340);
+    let repo = Arc::new(FakeTenantRepo::with_root(root));
+    let then = OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("epoch");
+    repo.insert_tenant_raw(TenantModel {
+        id: stuck,
+        parent_id: Some(root),
+        name: "stuck".into(),
+        status: TenantStatus::Provisioning,
+        self_managed: false,
+        tenant_type_uuid: Uuid::from_u128(0xAA),
+        depth: 1,
+        created_at: then,
+        updated_at: then,
+        deleted_at: None,
+    });
+    let idp = Arc::new(FakeIdpProvisioner::new(FakeOutcome::Ok));
+    idp.set_deprovision_outcome(FakeDeprovisionOutcome::Unsupported);
+    let svc = TenantService::new(
+        repo.clone(),
+        idp.clone(),
+        Arc::new(InertResourceOwnershipChecker),
+        crate::domain::tenant_type::inert_tenant_type_checker(),
+        mock_enforcer(),
+        AccountManagementConfig {
+            idp: IdpConfig { required: true },
+            ..AccountManagementConfig::default()
+        },
+    );
+
+    let r = svc.reap_stuck_provisioning(StdDuration::from_secs(0)).await;
+    assert_eq!(r.scanned, 1);
+    assert_eq!(
+        r.compensated, 0,
+        "reaper MUST NOT compensate (hard-delete) the row on UnsupportedOperation when \
+         idp.required=true - would orphan vendor-side state"
+    );
+    assert_eq!(
+        r.terminal, 1,
+        "UnsupportedOperation under idp.required=true MUST be parked terminal (operator action \
+         required)"
+    );
+    assert!(
+        repo.find_by_id_unchecked(stuck).is_some(),
+        "row MUST remain after UnsupportedOperation under idp.required=true"
+    );
+    assert!(
+        repo.state
+            .lock()
+            .expect("lock")
+            .terminal_failures
+            .contains_key(&stuck),
+        "terminal_failure_at MUST be stamped"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -2741,8 +2924,9 @@ impl account_management_sdk::IdpTenantProvisionerClient for ClaimStealingCompens
 
 #[tokio::test]
 async fn reaper_compensable_path_refuses_delete_when_peer_reclaimed_and_parked_terminal() {
-    // Round-3 fix: `compensate_provisioning` MUST be claim-fenced
-    // (and `terminal_failure_at IS NULL`-fenced) so a worker whose
+    // Claim-fence contract on `compensate_provisioning`: the
+    // delete MUST fence on `claimed_by` (and on
+    // `terminal_failure_at IS NULL`) so a worker whose
     // `RETENTION_CLAIM_TTL` elapsed during a long IdP round-trip
     // does not silently erase a peer worker's terminal-park work.
     // Without the fence, this worker's `Compensable` outcome would

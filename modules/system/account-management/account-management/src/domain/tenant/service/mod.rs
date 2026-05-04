@@ -70,8 +70,9 @@ pub(crate) mod pep {
 }
 
 use account_management_sdk::{
-    CreateChildInput, IdpTenantProvisionerClient, ListChildrenQuery, ProvisionFailure,
-    ProvisionRequest, TenantInfo, TenantPage, TenantUpdate,
+    CreateChildInput, DeprovisionFailure, DeprovisionRequest, IdpTenantProvisionerClient,
+    ListChildrenQuery, ProvisionFailure, ProvisionMetadataEntry, ProvisionRequest, TenantInfo,
+    TenantPage, TenantUpdate,
 };
 use tenant_resolver_sdk::TenantId;
 use types_registry_sdk::TypesRegistryClient;
@@ -721,26 +722,32 @@ impl<R: TenantRepo> TenantService<R> {
         // already holds the parent row in scope, so feed `parent.id`
         // directly to skip the redundant child-row fetch the previous
         // child-keyed shape required.
-        let ancestors = self
-            .repo
-            .load_ancestor_chain_through_parent(&AccessScope::allow_all(), parent.id)
-            .await?;
-        let closure_rows = build_activation_rows(
-            provisioning_row.id,
-            TenantStatus::Active,
-            input.self_managed,
-            &ancestors,
-        );
+        //
+        // Best-effort IdP+row compensation on step-3 failure: once
+        // `provision_tenant` succeeded the IdP holds vendor-side
+        // state. If the closure load or `activate_tenant` step then
+        // fails, we run a best-effort `deprovision_tenant` + row
+        // compensation here so the failure does not leave orphaned
+        // IdP state until the next reaper tick. Failures of the
+        // compensation itself are logged and the original error is
+        // propagated unchanged — the reaper still owns the
+        // last-resort cleanup if any compensation step fails.
         // @cpt-begin:cpt-cf-account-management-dod-tenant-hierarchy-management-idp-tenant-provision:p1:inst-dod-idp-provision-metadata
-        let activated = self
-            .repo
-            .activate_tenant(
-                &AccessScope::allow_all(),
+        let activated = match self
+            .finalize_provisioning(
+                &parent,
                 provisioning_row.id,
-                &closure_rows,
+                input.self_managed,
                 &provision_result.metadata_entries,
             )
-            .await?;
+            .await
+        {
+            Ok(row) => row,
+            Err(err) => {
+                self.compensate_failed_activation(provisioning_row.id).await;
+                return Err(err);
+            }
+        };
         // @cpt-end:cpt-cf-account-management-dod-tenant-hierarchy-management-idp-tenant-provision:p1:inst-dod-idp-provision-metadata
 
         // TODO(events): emit AM event when platform event-bus lands.
@@ -776,6 +783,110 @@ impl<R: TenantRepo> TenantService<R> {
     // @cpt-end:cpt-cf-account-management-dod-tenant-hierarchy-management-create-child-tenant-saga:p1:inst-dod-create-child-saga
     // @cpt-end:cpt-cf-account-management-algo-tenant-hierarchy-management-create-tenant-saga:p1:inst-algo-saga-service
     // @cpt-end:cpt-cf-account-management-flow-tenant-hierarchy-management-create-child-tenant:p1:inst-flow-create-service
+
+    /// Saga step 3 inner pipeline: load ancestor chain → build
+    /// closure rows → flip the tenant to `Active`. Extracted so the
+    /// caller (`create_child`) can wrap it in a single error-handling
+    /// `match` and drive [`Self::compensate_failed_activation`] on
+    /// any failure.
+    async fn finalize_provisioning(
+        &self,
+        parent: &TenantModel,
+        provisioning_id: Uuid,
+        self_managed: bool,
+        metadata_entries: &[ProvisionMetadataEntry],
+    ) -> Result<TenantModel, DomainError> {
+        let ancestors = self
+            .repo
+            .load_ancestor_chain_through_parent(&AccessScope::allow_all(), parent.id)
+            .await?;
+        let closure_rows = build_activation_rows(
+            provisioning_id,
+            TenantStatus::Active,
+            self_managed,
+            ancestors.as_slice(),
+        );
+        self.repo
+            .activate_tenant(
+                &AccessScope::allow_all(),
+                provisioning_id,
+                &closure_rows,
+                metadata_entries,
+            )
+            .await
+    }
+
+    /// Best-effort cleanup after `finalize_provisioning` fails post-
+    /// `idp.provision_tenant` success. Runs:
+    ///   1. `idp.deprovision_tenant` to release vendor-side state
+    ///      (skipped on `Retryable` / `Terminal` outcomes — those
+    ///      need vendor-side retry, not a row delete);
+    ///   2. `compensate_provisioning(claimed_by = None)` to remove
+    ///      the local `Provisioning` row, fenced on no peer reaper
+    ///      having claimed it (fence rejection means the reaper
+    ///      already owns the row and will compensate via its own
+    ///      pipeline).
+    ///
+    /// Every failure here is logged at `am.tenant.saga` and
+    /// suppressed — the caller propagates the **original** error
+    /// from saga step 3. The reaper remains the last-resort cleanup.
+    #[allow(
+        clippy::cognitive_complexity,
+        reason = "best-effort multi-step compensation: each branch logs a distinct outcome and degrades silently to the reaper; collapsing the IdP/row legs hides which step ran"
+    )]
+    async fn compensate_failed_activation(&self, provisioning_id: Uuid) {
+        // Step 1 — vendor-side cleanup. We only run the row delete
+        // when the IdP confirms there is nothing left to orphan
+        // (`Ok` / `NotFound` / `UnsupportedOperation`). Retryable /
+        // Terminal failures require vendor-side resolution; leave
+        // the row for the reaper, which already classifies these
+        // outcomes correctly.
+        let idp_clean = match self
+            .idp
+            .deprovision_tenant(&DeprovisionRequest {
+                tenant_id: provisioning_id,
+            })
+            .await
+        {
+            Ok(())
+            | Err(
+                DeprovisionFailure::NotFound { .. }
+                | DeprovisionFailure::UnsupportedOperation { .. },
+            ) => true,
+            Err(failure) => {
+                let label = failure.as_metric_label();
+                warn!(
+                    target: "am.tenant.saga",
+                    tenant_id = %provisioning_id,
+                    outcome = label,
+                    "saga step-3 compensation: IdP deprovision did not confirm cleanup; \
+                     leaving provisioning row for the reaper"
+                );
+                false
+            }
+        };
+        if !idp_clean {
+            return;
+        }
+
+        // Step 2 — local row delete, fenced on no peer reaper claim
+        // and no terminal stamp. A `Conflict` here is the documented
+        // "reaper got there first" path — log and let the reaper's
+        // own `compensate_provisioning_row` finish the cleanup.
+        if let Err(err) = self
+            .repo
+            .compensate_provisioning(&AccessScope::allow_all(), provisioning_id, None)
+            .await
+        {
+            warn!(
+                target: "am.tenant.saga",
+                tenant_id = %provisioning_id,
+                error = %err,
+                "saga step-3 compensation: row delete failed (peer reaper may have \
+                 claimed the row mid-activation); leaving for the reaper"
+            );
+        }
+    }
 
     // -----------------------------------------------------------------
     // Read tenant details

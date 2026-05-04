@@ -184,7 +184,28 @@ impl<R: TenantRepo> TenantService<R> {
             .deprovision_tenant(&DeprovisionRequest { tenant_id })
             .await
         {
-            Ok(()) | Err(DeprovisionFailure::UnsupportedOperation { .. }) => {
+            Ok(()) => ReaperOutcome::Compensable("compensated"),
+            Err(DeprovisionFailure::UnsupportedOperation { .. }) => {
+                // `UnsupportedOperation` is only safe to treat as
+                // compensable when the deployment opted out of an
+                // IdP entirely (`cfg.idp.required = false` → wired
+                // to `NoopProvisioner`). A real plugin returning
+                // this is signalling that it cannot perform
+                // deprovision but external state may exist — hard-
+                // deleting the AM row would orphan that vendor-side
+                // state with no local repair handle. Park the row
+                // terminal so an operator (or a redeployed plugin
+                // that implements deprovision) can resolve it.
+                if self.cfg.idp.required {
+                    warn!(
+                        target: "am.retention",
+                        tenant_id = %tenant_id,
+                        "reaper: IdP plugin returned UnsupportedOperation but idp.required=true; \
+                         parking row out of the retry loop (operator action required to deprovision \
+                         vendor-side state before AM row removal)"
+                    );
+                    return ReaperOutcome::Terminal;
+                }
                 ReaperOutcome::Compensable("compensated")
             }
             Err(DeprovisionFailure::NotFound { .. }) => {
