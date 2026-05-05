@@ -4,21 +4,40 @@
 //! The trait + DTO are stable contract and live in
 //! [`account_management_sdk::idp`] (see that module's docs for the
 //! provisioner contract). This module owns the **mapping** from those
-//! plugin-facing failure variants onto AM's internal error taxonomy:
+//! plugin-facing failure variants onto AM's internal error taxonomy
+//! via the crate-private extension trait
+//! [`ProvisionFailureExt::into_domain_error`].
 //!
-//! * [`From<account_management_sdk::ProvisionFailure>`] → [`DomainError`]
-//! * [`From<account_management_sdk::DeprovisionFailure>`] → [`DomainError`]
+//! The method takes a `tenant_id: Uuid` so the per-conversion
+//! `tracing::warn!` carries enough structured context for operator
+//! grep — without that field a stack of identical `am.idp` warns from
+//! different tenants becomes impossible to attribute. We deliberately
+//! do NOT provide `From<ProvisionFailure> for DomainError`: the
+//! conversion has a mandatory side effect (redaction + structured log
+//! emit) and a mandatory context input (`tenant_id`). Forcing every
+//! call site through `into_domain_error(tenant_id)` makes the
+//! requirement locally visible and prevents an accidental
+//! `?`-propagation that would emit a context-less log line.
 //!
-//! Both conversions redact provider-supplied detail strings (which can
+//! The symmetric `DeprovisionFailureExt` is intentionally NOT defined
+//! at this revision — there are no production callers (the retention
+//! and reaper pipelines and the saga step-3 compensator all
+//! pattern-match on the variant manually). It will land together
+//! with its first real consumer rather than as dead infrastructure;
+//! the rationale is restated next to the trait's eventual home at
+//! the bottom of this file.
+//!
+//! The mapping redacts provider-supplied detail strings (which can
 //! carry vendor SDK error text, hostnames, or token-bearing fragments)
-//! through [`redact_provider_detail`] and emit a `tracing::warn!` on
+//! through [`redact_provider_detail`] and emits a `tracing::warn!` on
 //! `am.idp` so operators can correlate the redacted public envelope
 //! back to the raw provider response via the digest + length pair.
 
 use std::hash::Hasher;
 
-use account_management_sdk::{DeprovisionFailure, ProvisionFailure};
+use account_management_sdk::ProvisionFailure;
 use fnv::FnvHasher;
+use uuid::Uuid;
 
 use crate::domain::error::DomainError;
 
@@ -58,7 +77,8 @@ pub(crate) fn redact_provider_detail(detail: &str) -> (u64, usize) {
     (hasher.finish(), detail.chars().count())
 }
 
-/// Map [`ProvisionFailure`] onto the [`DomainError`] taxonomy.
+/// Map [`ProvisionFailure`] onto the [`DomainError`] taxonomy with
+/// caller-supplied `tenant_id` context.
 ///
 /// * `CleanFailure` → [`DomainError::ServiceUnavailable`] (HTTP 503;
 ///   compensation already ran; AM proved no provider state was
@@ -76,24 +96,31 @@ pub(crate) fn redact_provider_detail(detail: &str) -> (u64, usize) {
 ///   (HTTP 501); the boundary mapping further redacts the public
 ///   message (provider detail kept private — see
 ///   `infra::canonical_mapping`).
-impl From<ProvisionFailure> for DomainError {
+pub(crate) trait ProvisionFailureExt {
+    fn into_domain_error(self, tenant_id: Uuid) -> DomainError;
+}
+
+impl ProvisionFailureExt for ProvisionFailure {
     #[allow(
         clippy::cognitive_complexity,
         reason = "flat 3-arm match with redact + warn! per arm; splitting fragments the variant->DomainError mapping reviewers must eyeball-check"
     )]
-    fn from(failure: ProvisionFailure) -> Self {
-        match failure {
-            ProvisionFailure::CleanFailure { detail } => {
+    fn into_domain_error(self, tenant_id: Uuid) -> DomainError {
+        match self {
+            Self::CleanFailure { detail } => {
                 let (digest, len) = redact_provider_detail(&detail);
                 tracing::warn!(
                     target: "am.idp",
+                    tenant_id = %tenant_id,
                     provider_detail_digest = digest,
                     provider_detail_len = len,
                     "IdP provision CleanFailure; surfacing generic ServiceUnavailable, raw detail redacted (correlate via digest + audit-only diagnostic)"
                 );
-                Self::service_unavailable("identity provider unavailable; provisioning compensated")
+                DomainError::service_unavailable(
+                    "identity provider unavailable; provisioning compensated",
+                )
             }
-            ProvisionFailure::Ambiguous { detail } => {
+            Self::Ambiguous { detail } => {
                 // `DomainError::Internal::diagnostic` is forwarded
                 // verbatim into the public `Problem.detail` by
                 // `infra::canonical_mapping::From<DomainError> for
@@ -104,11 +131,12 @@ impl From<ProvisionFailure> for DomainError {
                 let (digest, len) = redact_provider_detail(&detail);
                 tracing::warn!(
                     target: "am.idp",
+                    tenant_id = %tenant_id,
                     provider_detail_digest = digest,
                     provider_detail_len = len,
                     "IdP provision Ambiguous outcome; surfacing generic Internal, raw detail redacted"
                 );
-                Self::Internal {
+                DomainError::Internal {
                     diagnostic: format!(
                         "idp provision ambiguous outcome (provider detail redacted; \
                          digest=0x{digest:016x} len={len})"
@@ -116,7 +144,7 @@ impl From<ProvisionFailure> for DomainError {
                     cause: None,
                 }
             }
-            ProvisionFailure::UnsupportedOperation { detail } => {
+            Self::UnsupportedOperation { detail } => {
                 // The canonical-mapping boundary logs `detail` on a
                 // `tracing::warn!` for operator correlation; that
                 // makes the variant's `detail` field part of the
@@ -126,11 +154,12 @@ impl From<ProvisionFailure> for DomainError {
                 let (digest, len) = redact_provider_detail(&detail);
                 tracing::warn!(
                     target: "am.idp",
+                    tenant_id = %tenant_id,
                     provider_detail_digest = digest,
                     provider_detail_len = len,
                     "IdP provision UnsupportedOperation; raw detail redacted"
                 );
-                Self::UnsupportedOperation {
+                DomainError::UnsupportedOperation {
                     detail: format!(
                         "provider declined the operation (detail redacted; \
                          digest=0x{digest:016x} len={len})"
@@ -146,13 +175,14 @@ impl From<ProvisionFailure> for DomainError {
                 let label = other.as_metric_label();
                 tracing::error!(
                     target: "am.idp",
+                    tenant_id = %tenant_id,
                     variant = label,
-                    "unknown ProvisionFailure variant; mapping conservatively to Internal -- update From<ProvisionFailure> for DomainError"
+                    "unknown ProvisionFailure variant; mapping conservatively to Internal -- update ProvisionFailureExt::into_domain_error"
                 );
-                Self::Internal {
+                DomainError::Internal {
                     diagnostic: format!(
                         "idp provision unknown failure variant `{label}` (raw detail redacted; \
-                         update From<ProvisionFailure> for DomainError)"
+                         update ProvisionFailureExt::into_domain_error)"
                     ),
                     cause: None,
                 }
@@ -161,116 +191,16 @@ impl From<ProvisionFailure> for DomainError {
     }
 }
 
-/// Map [`DeprovisionFailure`] onto the [`DomainError`] taxonomy.
-///
-/// * `Terminal` → [`DomainError::Internal`] (HTTP 500). The raw
-///   provider detail is **not** forwarded into the variant —
-///   `Internal::diagnostic` is exposed as the public `Problem.detail`
-///   by the canonical-mapping boundary, so the variant carries a
-///   redacted summary and the raw text is logged at `am.idp` with a
-///   digest for operator correlation.
-/// * `Retryable` → [`DomainError::ServiceUnavailable`] (HTTP 503).
-///   Provider-supplied `detail` is **not** forwarded into the public
-///   envelope (same vendor-text-leak rationale as
-///   [`ProvisionFailure::CleanFailure`]); raw detail is logged at
-///   `am.idp` for operator correlation via digest.
-/// * `UnsupportedOperation` → [`DomainError::UnsupportedOperation`]
-///   (HTTP 501); the variant's `detail` field is logged verbatim by
-///   the canonical-mapping boundary, so the raw provider text is
-///   redacted at construction here.
-/// * `NotFound` should never reach this mapping in production — the
-///   hard-delete and reaper pipelines both treat it as
-///   success-equivalent and never propagate it as `DomainError`. The
-///   arm exists only to keep the match exhaustive; it routes to
-///   [`DomainError::Internal`] (with redacted diagnostic) so an
-///   unexpected propagation is loud rather than silent.
-impl From<DeprovisionFailure> for DomainError {
-    #[allow(
-        clippy::cognitive_complexity,
-        reason = "flat 4-arm match with redact + warn! per arm; splitting fragments the variant->DomainError mapping reviewers must eyeball-check"
-    )]
-    fn from(failure: DeprovisionFailure) -> Self {
-        match failure {
-            DeprovisionFailure::Terminal { detail } => {
-                let (digest, len) = redact_provider_detail(&detail);
-                tracing::warn!(
-                    target: "am.idp",
-                    provider_detail_digest = digest,
-                    provider_detail_len = len,
-                    "IdP deprovision terminal failure; surfacing generic Internal, raw detail redacted"
-                );
-                Self::Internal {
-                    diagnostic: format!(
-                        "idp deprovision terminal failure (provider detail redacted; \
-                         digest=0x{digest:016x} len={len})"
-                    ),
-                    cause: None,
-                }
-            }
-            DeprovisionFailure::Retryable { detail } => {
-                let (digest, len) = redact_provider_detail(&detail);
-                tracing::warn!(
-                    target: "am.idp",
-                    provider_detail_digest = digest,
-                    provider_detail_len = len,
-                    "IdP deprovision Retryable failure; surfacing generic ServiceUnavailable, raw detail redacted (correlate via digest)"
-                );
-                Self::service_unavailable(
-                    "identity provider unavailable; deprovision will be retried",
-                )
-            }
-            DeprovisionFailure::UnsupportedOperation { detail } => {
-                let (digest, len) = redact_provider_detail(&detail);
-                tracing::warn!(
-                    target: "am.idp",
-                    provider_detail_digest = digest,
-                    provider_detail_len = len,
-                    "IdP deprovision UnsupportedOperation; raw detail redacted"
-                );
-                Self::UnsupportedOperation {
-                    detail: format!(
-                        "provider declined the operation (detail redacted; \
-                         digest=0x{digest:016x} len={len})"
-                    ),
-                }
-            }
-            DeprovisionFailure::NotFound { detail } => {
-                let (digest, len) = redact_provider_detail(&detail);
-                tracing::warn!(
-                    target: "am.idp",
-                    provider_detail_digest = digest,
-                    provider_detail_len = len,
-                    "IdP deprovision NotFound reached DomainError mapping; pipelines should treat NotFound as success-equivalent. Surfacing Internal, raw detail redacted"
-                );
-                Self::Internal {
-                    diagnostic: format!(
-                        "idp deprovision NotFound reached DomainError mapping (provider detail redacted; \
-                         digest=0x{digest:016x} len={len})"
-                    ),
-                    cause: None,
-                }
-            }
-            // SDK enum is `#[non_exhaustive]`. A new variant added in a
-            // future SDK release lands here until the AM-side mapping
-            // is updated; surface as `Internal` with a loud `error!`.
-            other => {
-                let label = other.as_metric_label();
-                tracing::error!(
-                    target: "am.idp",
-                    variant = label,
-                    "unknown DeprovisionFailure variant; mapping conservatively to Internal -- update From<DeprovisionFailure> for DomainError"
-                );
-                Self::Internal {
-                    diagnostic: format!(
-                        "idp deprovision unknown failure variant `{label}` (raw detail redacted; \
-                         update From<DeprovisionFailure> for DomainError)"
-                    ),
-                    cause: None,
-                }
-            }
-        }
-    }
-}
+// `DeprovisionFailure → DomainError` has no production callers
+// today: the retention pipeline ([`super::tenant::service::retention`])
+// and the reaper ([`super::tenant::service::reaper`]) both
+// pattern-match on the variant and decide per-arm; the saga
+// step-3 compensator ([`super::tenant::service::TenantService::compensate_failed_activation`])
+// likewise matches manually. The conversion shape (with the same
+// redaction + per-variant `DomainError` mapping as the
+// `ProvisionFailure` side) lands together with its first real
+// caller — typically an admin endpoint that surfaces a deprovision
+// outcome to a caller — rather than as dead infrastructure here.
 
 #[cfg(test)]
 #[cfg_attr(coverage_nightly, coverage(off))]

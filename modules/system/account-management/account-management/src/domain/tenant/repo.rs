@@ -369,6 +369,34 @@ pub trait TenantRepo: Send + Sync {
         now: OffsetDateTime,
     ) -> Result<bool, DomainError>;
 
+    /// Stamp `terminal_failure_at = now` on a `Deleted` row whose
+    /// retention-pipeline cleanup the service classified as
+    /// non-recoverable: a `HookError::Terminal` (or panicking) cascade
+    /// hook, or a `DeprovisionFailure::Terminal` from the `IdP`
+    /// plugin during `hard_delete_batch`. Symmetric to
+    /// [`Self::mark_provisioning_terminal_failure`] for the
+    /// reaper-side `Provisioning` path; the marker keeps the row out
+    /// of the `scan_retention_due` retry loop until an operator
+    /// intervenes (manual hard-delete or `terminal_failure_at`
+    /// clear).
+    ///
+    /// The implementation **MUST** fence the UPDATE on
+    /// `claimed_by`, `status = Deleted`, and
+    /// `terminal_failure_at IS NULL` so a peer's claim or a
+    /// concurrent finalizer / re-mark cannot have its work
+    /// overridden. Returns `true` iff the row was actually marked;
+    /// `false` indicates the claim was lost or the row no longer
+    /// matches the fence (caller treats as no-op for idempotency —
+    /// the row is either being marked by the live claim holder or
+    /// has already been parked / hard-deleted).
+    async fn mark_retention_terminal_failure(
+        &self,
+        scope: &AccessScope,
+        id: Uuid,
+        claimed_by: Uuid,
+        now: OffsetDateTime,
+    ) -> Result<bool, DomainError>;
+
     /// Return `true` iff a `tenant_closure` row exists with
     /// `ancestor_id = ancestor` and `descendant_id = descendant`.
     async fn is_descendant(

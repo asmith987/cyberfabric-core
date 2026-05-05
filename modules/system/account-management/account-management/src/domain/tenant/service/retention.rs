@@ -17,7 +17,6 @@ use futures::stream::{self, StreamExt};
 use modkit_security::AccessScope;
 use time::OffsetDateTime;
 use tracing::warn;
-use uuid::Uuid;
 
 use account_management_sdk::{DeprovisionFailure, DeprovisionRequest};
 
@@ -61,6 +60,18 @@ impl<R: TenantRepo> TenantService<R> {
                     error = %err,
                     "hard_delete_batch: scan failed; skipping tick"
                 );
+                // Distinguish a healthy idle tick (zero due rows) from
+                // a tick that no-op'd because the scan itself faulted
+                // (DB contention, transient SeaORM error, …).
+                // `scan_retention_due` does not go through
+                // `with_serializable_retry`, so the otherwise-shared
+                // `AM_SERIALIZABLE_RETRY{outcome=exhausted}` signal
+                // does not cover this path.
+                emit_metric(
+                    AM_TENANT_RETENTION,
+                    MetricKind::Counter,
+                    &[("job", "hard_delete"), ("outcome", "scan_failed")],
+                );
                 return HardDeleteResult::default();
             }
         };
@@ -94,8 +105,42 @@ impl<R: TenantRepo> TenantService<R> {
         let mut result = HardDeleteResult::default();
         // `BTreeMap` iterates keys ascending; reverse to drain the
         // deepest bucket first.
+        //
+        // Within each bucket: stream-and-process. The shape is
+        // `buffer_unordered(concurrency)` for `process_single_hard_delete`
+        // (cascade hooks → IdP → DB teardown), then
+        // `while let Some(...) = stream.next().await` applies parking
+        // and claim-release per row AS IT ARRIVES rather than after
+        // the bucket's slowest row finishes. Streaming matters here
+        // for the same reason as in the reaper:
+        //   * one slow / hung row would otherwise hold every other
+        //     completed row's claim past `RETENTION_CLAIM_TTL`
+        //     (~10 min), letting a peer worker re-claim and re-run
+        //     cascade hooks AND `deprovision_tenant` against the
+        //     same tenant — cascade hooks have side effects on
+        //     sibling-feature rows, so a duplicate run is not free;
+        //   * if the slow row's future never returns, every other
+        //     row in the bucket would block indefinitely.
+        // Per-row state (metric emission, parking call, claim-release
+        // call, `result.tally`) stays inside the loop body, so the
+        // serial `&mut result` borrow is preserved — DB writes still
+        // serialise on the `tenants` write path. Cross-bucket
+        // ordering is preserved by the outer `for`: depth N is fully
+        // drained (including its slow tail) before depth N-1 begins,
+        // which is required because parents at N-1 would otherwise
+        // see still-present children at N and defer.
+        //
+        // `&self` is captured shared across concurrent
+        // `process_single_hard_delete` calls. Safe: `TenantService<R>`
+        // is `Sync` (all fields are `Sync` — `Arc<R>`, `Arc<idp>`,
+        // plain-value config, `parking_lot::Mutex`-guarded hooks);
+        // `process_single_hard_delete` mutates only DB / IdP / metric
+        // state, not service state. Do NOT "fix" by cloning into
+        // each future or splitting handles — both would lose the
+        // streaming property without a corresponding correctness
+        // gain.
         for (_depth, bucket) in by_depth.into_iter().rev() {
-            let outcomes: Vec<(Uuid, u32, Uuid, HardDeleteOutcome)> = stream::iter(bucket)
+            let mut stream = stream::iter(bucket)
                 .map(|row| {
                     let hooks = hooks_snapshot.as_slice();
                     async move {
@@ -106,11 +151,9 @@ impl<R: TenantRepo> TenantService<R> {
                         (id, depth, claimed_by, outcome)
                     }
                 })
-                .buffer_unordered(concurrency)
-                .collect()
-                .await;
+                .buffer_unordered(concurrency);
 
-            for (id, depth, claimed_by, outcome) in outcomes {
+            while let Some((id, depth, claimed_by, outcome)) = stream.next().await {
                 if outcome.is_cleaned() {
                     // TODO(events): emit AM event when platform event-bus lands.
                     // `is_cleaned()` covers both `Cleaned` and
@@ -138,6 +181,78 @@ impl<R: TenantRepo> TenantService<R> {
                         ("outcome", outcome.as_metric_label()),
                     ],
                 );
+
+                // Park terminal-class outcomes via
+                // `terminal_failure_at` so the scanner stops re-
+                // attempting the same broken row every tick. The
+                // retention pipeline classified the row as
+                // operator-action-required (panicking / `Terminal`
+                // cascade hook, or IdP returned
+                // `DeprovisionFailure::Terminal`); without parking,
+                // a permanently buggy hook or vendor-side state
+                // would cause the row to churn the scanner /
+                // hook-stack / IdP indefinitely (one tick per
+                // `tick_secs`, default 60s) with no progress and
+                // pure observability noise. Symmetric to the
+                // reaper-side stamp on `Provisioning` rows
+                // classified as `IdpTerminal`. Operator clears
+                // `terminal_failure_at` (manual SQL) once the
+                // underlying issue is fixed; the next scan picks
+                // the row back up. `StorageError` is intentionally
+                // NOT parked — it is a transient infra fault, not a
+                // terminal classification.
+                if matches!(
+                    outcome,
+                    HardDeleteOutcome::CascadeTerminal | HardDeleteOutcome::IdpTerminal
+                ) {
+                    match self
+                        .repo
+                        .mark_retention_terminal_failure(
+                            &AccessScope::allow_all(),
+                            id,
+                            claimed_by,
+                            OffsetDateTime::now_utc(),
+                        )
+                        .await
+                    {
+                        Ok(_) => {
+                            // `Ok(true)` — row parked; subsequent
+                            // ticks skip it via the
+                            // `terminal_failure_at IS NULL` scan
+                            // filter, so the per-tick
+                            // `cascade_terminal` /
+                            // `idp_terminal` outcome metric
+                            // naturally goes from "rising every
+                            // tick" to "single spike then flat" —
+                            // that IS the operator signal of
+                            // "parking landed".
+                            //
+                            // `Ok(false)` — idempotent no-op (claim
+                            // was lost mid-tick OR row already
+                            // parked). Either case is benign; no
+                            // separate metric needed.
+                        }
+                        Err(err) => {
+                            warn!(
+                                target: "am.retention",
+                                tenant_id = %id,
+                                error = %err,
+                                "failed to mark terminal_failure_at after terminal-class \
+                                 outcome; row will re-fail next tick until parking lands"
+                            );
+                            // Distinct outcome label so the dashboard
+                            // separates a parking-machinery infra
+                            // fault from a hook / IdP terminal
+                            // classification.
+                            emit_metric(
+                                AM_TENANT_RETENTION,
+                                MetricKind::Counter,
+                                &[("job", "hard_delete"), ("outcome", "park_failed")],
+                            );
+                        }
+                    }
+                }
+
                 // Hold the claim on `DeferredChildPresent` so the
                 // scanner's `LIMIT` window is not monopolized by a
                 // backlog of blocked parents on the very next tick.
@@ -166,6 +281,16 @@ impl<R: TenantRepo> TenantService<R> {
                         tenant_id = %id,
                         error = %err,
                         "failed to clear retention claim after non-cleaned outcome"
+                    );
+                    // Sustained failures keep rows unavailable for
+                    // re-claim until `RETENTION_CLAIM_TTL` ages them
+                    // out (~10 min). Emit a dedicated counter so the
+                    // dashboard separates a healthy claim release
+                    // from a storage-fault-induced stale-claim cliff.
+                    emit_metric(
+                        AM_TENANT_RETENTION,
+                        MetricKind::Counter,
+                        &[("job", "hard_delete"), ("outcome", "claim_clear_failed")],
                     );
                 }
                 result.tally(&outcome);
@@ -226,11 +351,24 @@ impl<R: TenantRepo> TenantService<R> {
         let mut strongest: Option<HookError> = None;
         for hook in hooks {
             let fut = hook(row.id);
-            // Spawn into its own task so a panicking hook cannot kill the
-            // retention loop; surface panics as Retryable so the tenant is
-            // retried next tick rather than permanently stuck.
+            // Spawn into its own task so a panicking hook cannot kill
+            // the retention loop. A panic is operator-action-required
+            // (the dominant case is a deterministic bug in the hook
+            // impl, where retrying just panics again forever), so
+            // surface as `Terminal` rather than `Retryable`. The
+            // resulting `CascadeTerminal` outcome is then parked via
+            // `mark_retention_terminal_failure` in the outer loop
+            // (symmetric to the reaper's stamping for IdP-terminal
+            // failures on `Provisioning` rows), so the row drops out
+            // of the scanner until an operator clears
+            // `terminal_failure_at`. `JoinError::is_cancelled` is
+            // unreachable here because we never call `.abort()` on
+            // the spawned handle (that is the sole trigger for the
+            // cancelled variant); we only hold the handle across
+            // the immediate `.await`. Panic is therefore the only
+            // meaningful case.
             let result = tokio::spawn(fut).await.unwrap_or_else(|e| {
-                Err(HookError::Retryable {
+                Err(HookError::Terminal {
                     detail: format!("hook panicked: {e}"),
                 })
             });

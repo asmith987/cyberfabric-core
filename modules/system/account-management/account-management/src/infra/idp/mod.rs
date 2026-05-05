@@ -64,7 +64,9 @@ mod tests {
             tenant_id: Uuid::nil(),
             parent_id: None,
             name: "t".into(),
-            tenant_type: "gts.cf.core.am.tenant_type.v1~cf.core.am.customer.v1~".into(),
+            tenant_type: gts::GtsSchemaId::new(
+                "gts.cf.core.am.tenant_type.v1~cf.core.am.customer.v1~",
+            ),
             metadata: None,
         };
         let err = p.provision_tenant(&req).await.expect_err("noop must err");

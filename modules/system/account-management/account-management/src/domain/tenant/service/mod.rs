@@ -79,8 +79,10 @@ use types_registry_sdk::TypesRegistryClient;
 
 use crate::config::AccountManagementConfig;
 use crate::domain::error::DomainError;
+use crate::domain::idp::ProvisionFailureExt;
 use crate::domain::metrics::{
-    AM_DEPENDENCY_HEALTH, AM_HIERARCHY_DEPTH_EXCEEDANCE, MetricKind, emit_metric,
+    AM_DEPENDENCY_HEALTH, AM_HIERARCHY_DEPTH_EXCEEDANCE, AM_TENANT_RETENTION, MetricKind,
+    emit_metric,
 };
 use crate::domain::tenant::closure::build_activation_rows;
 use crate::domain::tenant::hooks::TenantHardDeleteHook;
@@ -468,7 +470,7 @@ impl<R: TenantRepo> TenantService<R> {
         // replaces the older `tenant_type_uuid` field on
         // `CreateChildInput`, removing the AM/IdP state-divergence
         // class where the two could drift.
-        let tenant_type_uuid = gts::GtsID::new(&input.tenant_type)
+        let tenant_type_uuid = gts::GtsID::new(input.tenant_type.as_ref())
             .map_err(|e| DomainError::InvalidTenantType {
                 detail: format!("invalid tenant_type chain `{}`: {e}", input.tenant_type),
             })?
@@ -652,15 +654,32 @@ impl<R: TenantRepo> TenantService<R> {
                                 "compensate_provisioning failed after IdP CleanFailure; \
                                  provisioning row left for reaper"
                             );
+                            // Mirrors the reaper-side
+                            // `compensate_failed` counter so the
+                            // dashboard can show saga-vs-reaper
+                            // compensation ratios. Distinct `job`
+                            // label so saga-side compensation
+                            // health is separable from the reaper
+                            // safety-net.
+                            emit_metric(
+                                AM_TENANT_RETENTION,
+                                MetricKind::Counter,
+                                &[
+                                    ("job", "saga_compensation"),
+                                    ("outcome", "compensate_failed"),
+                                ],
+                            );
                         }
-                        return Err(ProvisionFailure::CleanFailure { detail }.into());
+                        return Err(ProvisionFailure::CleanFailure { detail }
+                            .into_domain_error(provisioning_row.id));
                     }
                     ProvisionFailure::Ambiguous { detail } => {
                         // Leave the provisioning row in place for the reaper.
                         // The `From<ProvisionFailure> for DomainError` impl
                         // redacts the raw provider detail so vendor text
                         // never reaches the public envelope.
-                        return Err(ProvisionFailure::Ambiguous { detail }.into());
+                        return Err(ProvisionFailure::Ambiguous { detail }
+                            .into_domain_error(provisioning_row.id));
                     }
                     ProvisionFailure::UnsupportedOperation { detail } => {
                         // Treat as clean compensable — no IdP-side state exists.
@@ -688,8 +707,17 @@ impl<R: TenantRepo> TenantService<R> {
                                 "compensate_provisioning failed after IdP UnsupportedOperation; \
                                  provisioning row left for reaper"
                             );
+                            emit_metric(
+                                AM_TENANT_RETENTION,
+                                MetricKind::Counter,
+                                &[
+                                    ("job", "saga_compensation"),
+                                    ("outcome", "compensate_failed"),
+                                ],
+                            );
                         }
-                        return Err(ProvisionFailure::UnsupportedOperation { detail }.into());
+                        return Err(ProvisionFailure::UnsupportedOperation { detail }
+                            .into_domain_error(provisioning_row.id));
                     }
                     other => {
                         // SDK is `#[non_exhaustive]`; future variants
@@ -709,7 +737,7 @@ impl<R: TenantRepo> TenantService<R> {
                             variant = other.as_metric_label(),
                             "unknown ProvisionFailure variant; treating as Ambiguous (provisioning row left for reaper)"
                         );
-                        return Err(other.into());
+                        return Err(other.into_domain_error(provisioning_row.id));
                     }
                 }
                 // @cpt-end:cpt-cf-account-management-dod-tenant-hierarchy-management-idp-tenant-provisioning-failure:p1:inst-dod-idp-provision-failure-classify
@@ -776,7 +804,10 @@ impl<R: TenantRepo> TenantService<R> {
         // schema) so we don't need a registry RTT here.
         let mut info = self.lower_to_tenant_info(activated).await?;
         if info.tenant_type.is_none() {
-            info.tenant_type = Some(input.tenant_type);
+            // `TenantInfo.tenant_type` is `Option<String>` per the
+            // tenant-resolver-sdk public shape; lower the typed
+            // `GtsSchemaId` back to its wire form.
+            info.tenant_type = Some(input.tenant_type.into_string());
         }
         Ok(info)
     }
@@ -837,10 +868,12 @@ impl<R: TenantRepo> TenantService<R> {
     async fn compensate_failed_activation(&self, provisioning_id: Uuid) {
         // Step 1 — vendor-side cleanup. We only run the row delete
         // when the IdP confirms there is nothing left to orphan
-        // (`Ok` / `NotFound` / `UnsupportedOperation`). Retryable /
-        // Terminal failures require vendor-side resolution; leave
-        // the row for the reaper, which already classifies these
-        // outcomes correctly.
+        // (`Ok` / `NotFound` / `UnsupportedOperation` under
+        // `idp.required=false`). Retryable / Terminal failures —
+        // and `UnsupportedOperation` from a real plugin under
+        // `idp.required=true` — require vendor-side resolution;
+        // leave the row for the reaper, which already classifies
+        // these outcomes correctly.
         let idp_clean = match self
             .idp
             .deprovision_tenant(&DeprovisionRequest {
@@ -848,11 +881,43 @@ impl<R: TenantRepo> TenantService<R> {
             })
             .await
         {
-            Ok(())
-            | Err(
-                DeprovisionFailure::NotFound { .. }
-                | DeprovisionFailure::UnsupportedOperation { .. },
-            ) => true,
+            Ok(()) | Err(DeprovisionFailure::NotFound { .. }) => true,
+            Err(DeprovisionFailure::UnsupportedOperation { .. }) => {
+                // Symmetric with the retention pipeline (see
+                // `process_single_hard_delete`'s `UnsupportedOperation`
+                // arm) and the reaper (`classify_deprovision`):
+                // `UnsupportedOperation` is only safe to treat as
+                // "no IdP-side state retained" when the deployment
+                // explicitly opted out of an IdP via
+                // `cfg.idp.required = false` (the wired-in
+                // `NoopProvisioner` path). A real plugin returning
+                // this variant under `idp.required = true` signals
+                // that vendor-side state may exist but the plugin
+                // can't deprovision it — hard-deleting the AM row
+                // would orphan that state with no local repair
+                // handle. Defer to the reaper instead.
+                if self.cfg.idp.required {
+                    warn!(
+                        target: "am.tenant.saga",
+                        tenant_id = %provisioning_id,
+                        outcome = "unsupported_required",
+                        "saga step-3 compensation: IdP plugin returned UnsupportedOperation \
+                         but idp.required=true; refusing to orphan vendor-side state, \
+                         leaving provisioning row for the reaper"
+                    );
+                    emit_metric(
+                        AM_TENANT_RETENTION,
+                        MetricKind::Counter,
+                        &[
+                            ("job", "saga_compensation"),
+                            ("outcome", "unsupported_required"),
+                        ],
+                    );
+                    false
+                } else {
+                    true
+                }
+            }
             Err(failure) => {
                 let label = failure.as_metric_label();
                 warn!(
@@ -861,6 +926,17 @@ impl<R: TenantRepo> TenantService<R> {
                     outcome = label,
                     "saga step-3 compensation: IdP deprovision did not confirm cleanup; \
                      leaving provisioning row for the reaper"
+                );
+                // Saga-side step-3 cleanup that did not confirm
+                // vendor-side teardown. Distinct `outcome` label so
+                // operators can tell this apart from a storage
+                // fault on the row delete below; both are still
+                // "saga failed → reaper covers", but the remediation
+                // is different (IdP plugin health vs DB health).
+                emit_metric(
+                    AM_TENANT_RETENTION,
+                    MetricKind::Counter,
+                    &[("job", "saga_compensation"), ("outcome", "idp_unconfirmed")],
                 );
                 false
             }
@@ -884,6 +960,14 @@ impl<R: TenantRepo> TenantService<R> {
                 error = %err,
                 "saga step-3 compensation: row delete failed (peer reaper may have \
                  claimed the row mid-activation); leaving for the reaper"
+            );
+            emit_metric(
+                AM_TENANT_RETENTION,
+                MetricKind::Counter,
+                &[
+                    ("job", "saga_compensation"),
+                    ("outcome", "compensate_failed"),
+                ],
             );
         }
     }

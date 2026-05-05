@@ -158,9 +158,25 @@ pub(super) async fn scan_retention_due(
                     // avoids running the predicate-construction
                     // ladder twice while keeping both filter sites
                     // semantically identical.
+                    // Filter out retention-pipeline-parked rows.
+                    // `mark_retention_terminal_failure` stamps
+                    // `terminal_failure_at` on rows whose
+                    // `hard_delete_batch` step classified the
+                    // outcome as non-recoverable (cascade hook
+                    // returned `HookError::Terminal` / panicked, or
+                    // IdP returned `DeprovisionFailure::Terminal`).
+                    // Without this predicate the same broken row
+                    // would re-enter the scanner every tick and
+                    // re-fail with the same terminal outcome, churning
+                    // the IdP / hook stack until an operator
+                    // intervenes. Symmetric to
+                    // `scan_stuck_provisioning`'s
+                    // `terminal_failure_at IS NULL` filter on the
+                    // reaper side.
                     let scan_filter = Condition::all()
                         .add(tenants::Column::Status.eq(TenantStatus::Deleted.as_smallint()))
                         .add(tenants::Column::DeletionScheduledAt.is_not_null())
+                        .add(tenants::Column::TerminalFailureAt.is_null())
                         .add(claimable.clone())
                         .add(due_check.clone());
 
@@ -285,6 +301,18 @@ pub(super) async fn scan_retention_due(
                                 // extended could be hard-deleted on the
                                 // very next reaper tick.
                                 .add(due_check)
+                                // Defense-in-depth re-assert of the
+                                // retention-side terminal-failure
+                                // exclusion. Under READ COMMITTED a
+                                // peer worker that just classified the
+                                // row as terminal could stamp
+                                // `terminal_failure_at` between our
+                                // SELECT and this UPDATE; the marker
+                                // wins, this UPDATE affects 0 rows,
+                                // SELECT-by-marker returns nothing.
+                                // Mirrors the symmetric guard in
+                                // `scan_stuck_provisioning`.
+                                .add(tenants::Column::TerminalFailureAt.is_null())
                                 .add(claimable),
                         )
                         .secure()
@@ -297,7 +325,19 @@ pub(super) async fn scan_retention_due(
                         .filter(
                             Condition::all()
                                 .add(tenants::Column::Id.is_in(candidate_ids_for_select))
-                                .add(tenants::Column::ClaimedBy.eq(worker_id)),
+                                .add(tenants::Column::ClaimedBy.eq(worker_id))
+                                // Defense-in-depth — same posture as
+                                // `scan_stuck_provisioning`'s SELECT-
+                                // by-marker. Under correct single-tx
+                                // execution the prior UPDATE's row-
+                                // level lock already prevents a peer
+                                // from flipping these columns before
+                                // commit, but the extra predicate
+                                // keeps the read aligned with the
+                                // claim filter if a future refactor
+                                // splits the UPDATE / SELECT across
+                                // tx boundaries.
+                                .add(tenants::Column::TerminalFailureAt.is_null()),
                         )
                         .secure()
                         .scope_with(&scope)

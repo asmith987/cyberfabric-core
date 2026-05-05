@@ -186,6 +186,16 @@ impl TenantRepo for TenantRepoImpl {
         lifecycle::mark_provisioning_terminal_failure(self, scope, id, claimed_by, now).await
     }
 
+    async fn mark_retention_terminal_failure(
+        &self,
+        scope: &AccessScope,
+        id: Uuid,
+        claimed_by: Uuid,
+        now: OffsetDateTime,
+    ) -> Result<bool, DomainError> {
+        lifecycle::mark_retention_terminal_failure(self, scope, id, claimed_by, now).await
+    }
+
     async fn is_descendant(
         &self,
         scope: &AccessScope,

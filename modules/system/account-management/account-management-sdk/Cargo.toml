@@ -29,6 +29,13 @@ async-trait = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
+# Typed wrapper for chained GTS schema identifiers carried by SDK
+# inputs (`CreateChildInput.tenant_type`, `ProvisionRequest.tenant_type`).
+# Wire shape stays a string; the type is a documentation +
+# JSON-schema hint that the field is a chained `gts.X.v1~Y.v1~`
+# identifier rather than an arbitrary string. AM-side consumers
+# pass `&str` through `gts::GtsID::new` for full chain validation.
+gts = { workspace = true }
 
 # Tenant-resolver SDK is the canonical home for the public-facing
 # `TenantInfo` / `TenantStatus` shapes (slim, no internal storage

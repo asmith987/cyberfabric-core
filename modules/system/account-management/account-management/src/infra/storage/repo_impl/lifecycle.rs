@@ -588,11 +588,62 @@ pub(super) async fn mark_provisioning_terminal_failure(
     claimed_by: Uuid,
     now: OffsetDateTime,
 ) -> Result<bool, DomainError> {
+    mark_terminal_failure_with_status(
+        repo,
+        scope,
+        tenant_id,
+        claimed_by,
+        now,
+        TenantStatus::Provisioning,
+    )
+    .await
+}
+
+pub(super) async fn mark_retention_terminal_failure(
+    repo: &TenantRepoImpl,
+    scope: &AccessScope,
+    tenant_id: Uuid,
+    claimed_by: Uuid,
+    now: OffsetDateTime,
+) -> Result<bool, DomainError> {
+    mark_terminal_failure_with_status(
+        repo,
+        scope,
+        tenant_id,
+        claimed_by,
+        now,
+        TenantStatus::Deleted,
+    )
+    .await
+}
+
+/// Shared body for the two parking variants
+/// (`mark_provisioning_terminal_failure` /
+/// `mark_retention_terminal_failure`). The only difference between
+/// them is the `status` fence — the reaper parks `Provisioning`
+/// rows the `IdP` classified as terminal; the retention pipeline
+/// parks `Deleted` rows whose cleanup hooks or `IdP` deprovision were
+/// classified as terminal — and centralising the body here keeps
+/// the SERIALIZABLE-equivalent fence, idempotency, and claim posture
+/// identical for both. The status enum is a closed set, so this is
+/// not a "match-anything" generalization that a future caller could
+/// abuse to park an `Active` tenant: callers must spell out which
+/// pipeline path they sit on, and the two trait methods are the
+/// only public entry-points.
+async fn mark_terminal_failure_with_status(
+    repo: &TenantRepoImpl,
+    scope: &AccessScope,
+    tenant_id: Uuid,
+    claimed_by: Uuid,
+    now: OffsetDateTime,
+    status: TenantStatus,
+) -> Result<bool, DomainError> {
     // System-actor path; same `allow_all` posture as
-    // `compensate_provisioning` and `hard_delete_one`. The reaper
-    // already ran a PEP-equivalent gate at scan time (the row was
-    // claimed by this worker), and the marker write itself is a
-    // structural state transition not a tenant-scoped operation.
+    // `compensate_provisioning` and `hard_delete_one`. Whichever
+    // pipeline calls in already ran a PEP-equivalent gate at scan
+    // time (the row was claimed by this worker), and the marker
+    // write itself is a structural state transition not a
+    // tenant-scoped operation.
     let _ = scope;
     let conn = repo.db.conn()?;
     let res = tenants::Entity::update_many()
@@ -621,10 +672,11 @@ pub(super) async fn mark_provisioning_terminal_failure(
                 // if it lost the claim.
                 .add(tenants::Column::ClaimedBy.eq(claimed_by))
                 // Status fence: a parallel finalizer that flipped
-                // `Provisioning -> Active` between the reaper's IdP
-                // round-trip and this UPDATE must NOT be relabeled
-                // as "terminal failure" — the row is alive.
-                .add(tenants::Column::Status.eq(TenantStatus::Provisioning.as_smallint())),
+                // the row out of the expected status between this
+                // worker's IdP round-trip / cascade-hook step and
+                // this UPDATE must NOT be relabeled as terminal
+                // failure — that row is no longer ours.
+                .add(tenants::Column::Status.eq(status.as_smallint())),
         )
         .secure()
         // TODO(InTenantSubtree): system-actor terminal-failure write;

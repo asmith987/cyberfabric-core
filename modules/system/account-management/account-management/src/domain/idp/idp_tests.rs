@@ -1,20 +1,30 @@
 use super::*;
+use uuid::Uuid;
+
+/// Stable test tenant id used by every conversion test below. Its
+/// concrete value is irrelevant to the redaction / variant-mapping
+/// invariants under test — only the `tenant_id` field on the
+/// emitted `am.idp` log is shaped by it, and these tests don't
+/// assert log payload, just the resulting `DomainError` shape.
+fn fixture_tenant_id() -> Uuid {
+    Uuid::from_u128(0xA11CE)
+}
 
 #[test]
 fn clean_failure_maps_to_service_unavailable() {
-    let err: DomainError = ProvisionFailure::CleanFailure {
+    let err = ProvisionFailure::CleanFailure {
         detail: "conn refused".into(),
     }
-    .into();
+    .into_domain_error(fixture_tenant_id());
     assert!(matches!(err, DomainError::ServiceUnavailable { .. }));
 }
 
 #[test]
 fn provision_unsupported_operation_maps_to_unsupported_operation() {
-    let err: DomainError = ProvisionFailure::UnsupportedOperation {
+    let err = ProvisionFailure::UnsupportedOperation {
         detail: "not supported by provider".into(),
     }
-    .into();
+    .into_domain_error(fixture_tenant_id());
     let DomainError::UnsupportedOperation { detail } = err else {
         panic!("expected UnsupportedOperation");
     };
@@ -32,71 +42,23 @@ fn provision_unsupported_operation_maps_to_unsupported_operation() {
 
 #[test]
 fn provision_ambiguous_maps_to_internal_with_redacted_diagnostic() {
-    let err: DomainError = ProvisionFailure::Ambiguous {
-        detail: "vendor stack trace with token=...".into(),
+    let err = ProvisionFailure::Ambiguous {
+        detail: "vendor stack trace with token=secret-LEAK-9f3a7c2e".into(),
     }
-    .into();
+    .into_domain_error(fixture_tenant_id());
     let DomainError::Internal { diagnostic, .. } = err else {
         panic!("expected Internal");
     };
     assert!(diagnostic.contains("provider detail redacted"));
-    assert!(!diagnostic.contains("token="));
-}
-
-#[test]
-fn deprovision_terminal_maps_to_internal() {
-    let err: DomainError = DeprovisionFailure::Terminal {
-        detail: "torched".into(),
-    }
-    .into();
-    assert!(matches!(err, DomainError::Internal { .. }));
-}
-
-#[test]
-fn deprovision_retryable_maps_to_service_unavailable() {
-    let err: DomainError = DeprovisionFailure::Retryable {
-        detail: "try later".into(),
-    }
-    .into();
-    assert!(matches!(err, DomainError::ServiceUnavailable { .. }));
-}
-
-#[test]
-fn deprovision_unsupported_maps_to_unsupported_operation() {
-    let err: DomainError = DeprovisionFailure::UnsupportedOperation {
-        detail: "nope please dont".into(),
-    }
-    .into();
-    let DomainError::UnsupportedOperation { detail } = err else {
-        panic!("expected UnsupportedOperation");
-    };
-    assert!(
-        detail.contains("detail redacted"),
-        "missing redaction marker in public detail: {detail}"
-    );
-    assert!(
-        !detail.contains("nope please dont"),
-        "raw provider string leaked into public detail: {detail}"
-    );
-}
-
-#[test]
-fn deprovision_not_found_maps_to_internal_loudly() {
-    // NotFound should be intercepted by the pipelines before reaching
-    // the DomainError boundary; if it ever propagates, surface as
-    // Internal with a redacted diagnostic so the propagation is
-    // loud rather than silent. The detail carries a sentinel
-    // secret-shape so the test also pins the redaction contract:
-    // even on this rare loud-Internal path, raw vendor text must not
-    // reach the public diagnostic field.
-    let err: DomainError = DeprovisionFailure::NotFound {
-        detail: "absent token=secret-LEAK-9f3a7c2e".into(),
-    }
-    .into();
-    let DomainError::Internal { diagnostic, .. } = err else {
-        panic!("expected Internal");
-    };
-    assert!(diagnostic.contains("NotFound reached"));
+    // Pin the redaction contract for vendor-text leaks: even a
+    // sentinel-shaped token in `detail` MUST NOT reach the public
+    // `Internal::diagnostic` field (which is forwarded verbatim into
+    // `Problem.detail` by the canonical-mapping boundary). The
+    // symmetric Deprovision-side coverage previously lived in this
+    // file too; with `DeprovisionFailureExt` removed (no production
+    // callers — see `domain::idp::mod`), the redaction-helper itself
+    // is exercised by the Provision tests since both Provision and
+    // Deprovision conversions share `redact_provider_detail`.
     assert!(
         !diagnostic.contains("token="),
         "raw vendor token leaked into Internal diagnostic: {diagnostic}"

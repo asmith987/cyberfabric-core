@@ -18,6 +18,7 @@
 //!   4-variant `TenantStatus` (with `Provisioning`) is service-internal
 //!   and is filtered out before any value crosses this boundary.
 
+use gts::GtsSchemaId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -29,7 +30,11 @@ pub use tenant_resolver_sdk::{TenantId, TenantInfo, TenantStatus};
 /// `tenant_type` is a chained GTS identifier (e.g.
 /// `gts.cf.core.am.tenant_type.v1~cf.core.am.customer.v1~`); AM derives
 /// the canonical `UUIDv5` via [`gts::GtsID`] internally so callers do not
-/// supply two parallel identifiers (which used to drift).
+/// supply two parallel identifiers (which used to drift). The field is
+/// typed [`GtsSchemaId`] rather than `String` so callers (REST handler,
+/// inter-module Rust consumers) get a self-documenting contract and
+/// any generated JSON Schema annotates the field with
+/// `format: gts-schema-id`. Wire shape stays a string.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateChildInput {
     pub child_id: Uuid,
@@ -37,7 +42,7 @@ pub struct CreateChildInput {
     pub name: String,
     #[serde(default)]
     pub self_managed: bool,
-    pub tenant_type: String,
+    pub tenant_type: GtsSchemaId,
     /// Opaque provider-specific metadata forwarded to the `IdP` plugin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provisioning_metadata: Option<Value>,

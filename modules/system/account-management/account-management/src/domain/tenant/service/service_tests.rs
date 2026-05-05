@@ -47,7 +47,7 @@ fn child_input(child_id: Uuid, parent_id: Uuid) -> CreateChildInput {
         parent_id,
         name: "child".into(),
         self_managed: false,
-        tenant_type: "gts.cf.core.am.tenant_type.v1~cf.core.am.customer.v1~".into(),
+        tenant_type: gts::GtsSchemaId::new("gts.cf.core.am.tenant_type.v1~cf.core.am.customer.v1~"),
         provisioning_metadata: None,
     }
 }
@@ -1717,6 +1717,242 @@ async fn hard_delete_batch_invokes_cascade_hook_before_idp() {
     );
 }
 
+/// Regression for the panic-hook → infinite-`Retryable`-loop hazard
+/// AND for the retention-side `terminal_failure_at` parking that
+/// stops the row from churning the scanner.
+///
+/// A cascade hook whose returned future panics on poll is spawned
+/// into its own task by the retention pipeline, so the panic does
+/// not kill the loop. The pipeline maps the resulting `JoinError`
+/// to `HookError::Terminal` (NOT `HookError::Retryable`) — so the
+/// row's outcome is `CascadeTerminal` (folded into `failed`), not
+/// `CascadeRetryable` (folded into `deferred`). After classifying
+/// the row as terminal, the pipeline calls
+/// `mark_retention_terminal_failure` so the row drops out of the
+/// scanner via the `terminal_failure_at IS NULL` filter — without
+/// this, a permanently buggy hook would keep re-failing every
+/// `tick_secs` forever with no progress and pure observability
+/// noise.
+///
+/// Operator runbook: clear `terminal_failure_at` (manual SQL)
+/// after fixing the hook impl; the next scan picks the row back
+/// up. Pinned by the second-tick / cleared-marker / third-tick
+/// sequence below.
+#[tokio::test]
+async fn hard_delete_batch_panicking_cascade_hook_classifies_terminal_and_parks() {
+    let root = Uuid::from_u128(0x100);
+    let child = Uuid::from_u128(0x240);
+    let repo = Arc::new(FakeTenantRepo::with_root(root));
+    let idp = Arc::new(FakeIdpProvisioner::new(FakeOutcome::Ok));
+    let cfg = AccountManagementConfig {
+        retention: crate::config::RetentionConfig {
+            default_window_secs: 0,
+            ..crate::config::RetentionConfig::default()
+        },
+        ..AccountManagementConfig::default()
+    };
+    let svc = TenantService::new(
+        repo.clone(),
+        idp.clone(),
+        Arc::new(InertResourceOwnershipChecker),
+        crate::domain::tenant_type::inert_tenant_type_checker(),
+        mock_enforcer(),
+        cfg,
+    );
+
+    svc.create_child(&ctx_for(root), child_input(child, root))
+        .await
+        .expect("create child");
+    svc.soft_delete(&ctx(), child).await.expect("soft delete");
+
+    // Hook returns a future that panics on first poll. The pipeline
+    // spawns it via `tokio::spawn`, so the panic surfaces as
+    // `JoinError::is_panic()` rather than killing the loop.
+    let hook: TenantHardDeleteHook = Arc::new(|_id: Uuid| {
+        async move {
+            panic!("simulated cascade hook bug");
+            #[allow(unreachable_code)]
+            Ok::<(), HookError>(())
+        }
+        .boxed()
+    });
+    svc.register_hard_delete_hook(hook);
+
+    // Tick 1 — panic classifies as CascadeTerminal and the row is
+    // parked.
+    let res = svc.hard_delete_batch(64).await;
+
+    assert_eq!(res.processed, 1);
+    assert_eq!(
+        res.failed, 1,
+        "panic must classify as CascadeTerminal (failed), \
+         not CascadeRetryable (deferred)"
+    );
+    assert_eq!(
+        res.deferred, 0,
+        "regression to the old Retryable mapping would inflate `deferred`"
+    );
+    assert_eq!(res.cleaned, 0);
+    assert!(
+        idp.deprovision_calls.lock().expect("lock").is_empty(),
+        "IdP deprovision must NOT be called when a cascade hook panics"
+    );
+    assert!(
+        repo.find_by_id_unchecked(child).is_some(),
+        "tenant row must remain in place after CascadeTerminal"
+    );
+    assert!(
+        repo.is_terminally_failed_unchecked(child),
+        "row must be parked via terminal_failure_at after CascadeTerminal"
+    );
+    // Claim must be released after parking — otherwise an operator
+    // who clears `terminal_failure_at` would still need to wait
+    // `RETENTION_CLAIM_TTL` (~10 min) before the scanner re-claims
+    // the row. A regression that gates `release_claim_now` on
+    // `!is_failed()` (vs the current `!is_cleaned()` logic) would
+    // break the `CascadeTerminal` and `IdpTerminal` paths but
+    // would still release on `StorageError` (which `is_failed()`
+    // also covers); the same regression would silently leave a
+    // live claim on `NotEligible` and `IdpRetryable` outcomes,
+    // which this test does not exercise. A future
+    // `IdpRetryable`-focused parking test should include the
+    // parallel `find_claim_unchecked(...).is_none()` assertion to
+    // close that coverage gap.
+    assert!(
+        repo.find_claim_unchecked(child).is_none(),
+        "claim must be released after CascadeTerminal parking"
+    );
+
+    // Tick 2 — parked row is invisible to the scanner. Without
+    // parking, the broken hook would re-fail every tick forever
+    // (the regression class this assertion fences against).
+    let res2 = svc.hard_delete_batch(64).await;
+    assert_eq!(
+        res2.processed, 0,
+        "parked row must drop out of scan_retention_due"
+    );
+    assert_eq!(res2.failed, 0);
+    assert_eq!(res2.deferred, 0);
+    assert_eq!(res2.cleaned, 0);
+
+    // Operator runbook: ship a fixed hook + redeploy, then clear
+    // `terminal_failure_at` so the next tick picks the row back
+    // up. Modeled here as a fresh `TenantService` over the SAME
+    // repo + idp state — equivalent to a process restart that
+    // drains the in-memory hook list, after which sibling features
+    // re-register their (fixed) hooks at init. The fake repo state
+    // already has the row in `Deleted + parked + retention-due`
+    // shape, so we only need a service with a healthy hook list to
+    // drive the post-fix tick.
+    //
+    // `clear_terminal_failure_unchecked` simulates the manual SQL
+    // UPDATE; it also clears any leftover claim entry because the
+    // fake repo has no TTL-based takeover (production releases the
+    // claim at parking time, so on the prod side this is a no-op).
+    let svc_after_fix = TenantService::new(
+        repo.clone(),
+        idp.clone(),
+        Arc::new(InertResourceOwnershipChecker),
+        crate::domain::tenant_type::inert_tenant_type_checker(),
+        mock_enforcer(),
+        AccountManagementConfig {
+            retention: crate::config::RetentionConfig {
+                default_window_secs: 0,
+                ..crate::config::RetentionConfig::default()
+            },
+            ..AccountManagementConfig::default()
+        },
+    );
+    let healthy_hook: TenantHardDeleteHook =
+        Arc::new(|_id: Uuid| async move { Ok::<(), HookError>(()) }.boxed());
+    svc_after_fix.register_hard_delete_hook(healthy_hook);
+
+    repo.clear_terminal_failure_unchecked(child);
+    assert!(
+        !repo.is_terminally_failed_unchecked(child),
+        "operator-cleared row must no longer carry terminal_failure_at"
+    );
+
+    // Tick 3 — cleared row re-enters the scanner and completes.
+    // This pins the runbook end-to-end: identify the broken row,
+    // ship a healthy hook, clear the marker, the next tick hard-
+    // deletes. Without this assertion the "scanner picks the row
+    // back up" half of the runbook is only stated, not proven.
+    let res3 = svc_after_fix.hard_delete_batch(64).await;
+    assert_eq!(
+        res3.processed, 1,
+        "operator-cleared row must re-enter scan_retention_due"
+    );
+    assert_eq!(
+        res3.cleaned, 1,
+        "healthy hook + IdP `Ok` should reach Cleaned on tick 3"
+    );
+    assert!(
+        repo.find_by_id_unchecked(child).is_none(),
+        "tenant row must be hard-deleted after operator-driven recovery"
+    );
+}
+
+/// Pins the parking path for the IdP-terminal arm of the retention
+/// pipeline. Symmetric to the cascade-hook parking test above:
+/// when the `IdP` returns `DeprovisionFailure::Terminal` during
+/// `hard_delete_batch`, the row is classified as `IdpTerminal` and
+/// must be parked via `mark_retention_terminal_failure` so the
+/// scanner stops re-attempting on every tick. Mirrors the reaper's
+/// posture for `Provisioning` rows the `IdP` classifies as terminal.
+#[tokio::test]
+async fn hard_delete_batch_idp_terminal_parks_row_via_terminal_failure_at() {
+    let root = Uuid::from_u128(0x100);
+    let child = Uuid::from_u128(0x250);
+    let repo = Arc::new(FakeTenantRepo::with_root(root));
+    let idp = Arc::new(FakeIdpProvisioner::new(FakeOutcome::Ok));
+    idp.set_deprovision_outcome(FakeDeprovisionOutcome::Terminal);
+    let cfg = AccountManagementConfig {
+        retention: crate::config::RetentionConfig {
+            default_window_secs: 0,
+            ..crate::config::RetentionConfig::default()
+        },
+        ..AccountManagementConfig::default()
+    };
+    let svc = TenantService::new(
+        repo.clone(),
+        idp.clone(),
+        Arc::new(InertResourceOwnershipChecker),
+        crate::domain::tenant_type::inert_tenant_type_checker(),
+        mock_enforcer(),
+        cfg,
+    );
+
+    svc.create_child(&ctx_for(root), child_input(child, root))
+        .await
+        .expect("create child");
+    svc.soft_delete(&ctx(), child).await.expect("soft delete");
+
+    // Tick 1 — IdP returns Terminal → IdpTerminal outcome → row
+    // parked.
+    let res = svc.hard_delete_batch(64).await;
+    assert_eq!(res.processed, 1);
+    assert_eq!(res.failed, 1);
+    assert!(
+        repo.is_terminally_failed_unchecked(child),
+        "row must be parked via terminal_failure_at after IdpTerminal"
+    );
+    // Claim must be released after parking — see the rationale on
+    // the symmetric assertion in the cascade-hook parking test
+    // above.
+    assert!(
+        repo.find_claim_unchecked(child).is_none(),
+        "claim must be released after IdpTerminal parking"
+    );
+
+    // Tick 2 — parked row is invisible to the scanner.
+    let res2 = svc.hard_delete_batch(64).await;
+    assert_eq!(
+        res2.processed, 0,
+        "parked row must drop out of scan_retention_due on subsequent ticks"
+    );
+}
+
 // `check_hierarchy_integrity_returns_all_category_report` ships
 // alongside the classifier set in the diagnostics PR -- the report
 // shape (`IntegrityCategory`, `IntegrityReport`) and its repo
@@ -2412,6 +2648,77 @@ async fn create_child_finalization_failure_with_retryable_idp_leaves_row_for_rea
         1,
         "provisioning row MUST be left for the reaper when IdP compensation is non-clean; \
          got {provisioning_rows:?}"
+    );
+    assert_eq!(provisioning_rows[0].id, child);
+}
+
+/// Saga step-3 compensation must apply the same `idp.required`
+/// gate as the retention pipeline and the reaper: a real plugin
+/// returning `DeprovisionFailure::UnsupportedOperation` under
+/// `idp.required = true` signals that vendor-side state may still
+/// exist and the AM row MUST be left for the reaper, NOT
+/// hard-deleted locally. Without this gate the saga compensation
+/// would orphan vendor-side state every time a real plugin lacks
+/// the `deprovision_tenant` impl — the same bug class already
+/// fenced for retention by
+/// `hard_delete_batch_defers_unsupported_when_idp_required_true`
+/// and for the reaper by
+/// `reaper_marks_unsupported_terminal_when_idp_required_true`.
+#[tokio::test]
+async fn create_child_finalization_failure_with_unsupported_idp_required_leaves_row_for_reaper() {
+    use crate::config::IdpConfig;
+
+    let root = Uuid::from_u128(0x100);
+    let child = Uuid::from_u128(0xF302);
+    let repo = Arc::new(FakeTenantRepo::with_root(root));
+    repo.expect_next_activation_failure("simulated SERIALIZABLE abort");
+    let idp = Arc::new(FakeIdpProvisioner::new(FakeOutcome::Ok));
+    // Provision OK (saga step 2). On the saga step-3 compensation
+    // path the IdP returns `UnsupportedOperation` — under
+    // `idp.required = true` this MUST be treated as "did not
+    // confirm cleanup" (defer to reaper), NOT as the
+    // NoopProvisioner-style "no IdP-side state retained".
+    idp.set_deprovision_outcome(FakeDeprovisionOutcome::Unsupported);
+    let svc = TenantService::new(
+        repo.clone(),
+        idp.clone(),
+        Arc::new(InertResourceOwnershipChecker),
+        crate::domain::tenant_type::inert_tenant_type_checker(),
+        mock_enforcer(),
+        AccountManagementConfig {
+            idp: IdpConfig { required: true },
+            ..AccountManagementConfig::default()
+        },
+    );
+
+    let result = svc
+        .create_child(&ctx_for(root), child_input(child, root))
+        .await;
+    assert!(
+        matches!(result, Err(DomainError::Internal { .. })),
+        "activate_tenant failure must surface as Internal, got {result:?}"
+    );
+    // IdP compensation was attempted exactly once — the saga
+    // ALWAYS calls `deprovision_tenant` on step-3 failure to give
+    // the plugin a chance to confirm cleanup.
+    assert_eq!(
+        idp.deprovision_calls.lock().expect("lock").len(),
+        1,
+        "saga MUST attempt best-effort IdP compensation"
+    );
+    // Row MUST remain — under `idp.required = true`,
+    // `UnsupportedOperation` cannot prove vendor-side state is
+    // gone, so deleting locally would orphan it. The reaper owns
+    // the cleanup from here. A regression that drops this gate
+    // (treating `UnsupportedOperation` as `idp_clean = true`
+    // unconditionally) would leave `provisioning_rows` empty
+    // here.
+    let provisioning_rows = repo.snapshot_provisioning_rows();
+    assert_eq!(
+        provisioning_rows.len(),
+        1,
+        "provisioning row MUST be left for the reaper when IdP returns UnsupportedOperation \
+         under idp.required=true; got {provisioning_rows:?}"
     );
     assert_eq!(provisioning_rows[0].id, child);
 }

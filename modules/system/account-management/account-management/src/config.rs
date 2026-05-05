@@ -136,6 +136,21 @@ pub struct ReaperConfig {
     /// Maximum provisioning rows processed per reaper tick. Must be
     /// `> 0` (`LIMIT 0` would scan zero rows forever).
     pub batch_size: usize,
+
+    /// Per-tick concurrency for the `IdP` `deprovision_tenant`
+    /// classification fan-out. Must be `> 0`. The reaper `IdP` call is
+    /// the dominant per-row cost (full provider round-trip,
+    /// hundreds of ms typical, multi-second on degraded providers);
+    /// fan-out keeps one tick's wall-clock to roughly
+    /// `(batch_size / deprovision_concurrency) × IdP_RTT` instead of
+    /// `batch_size × IdP_RTT`. The DB-side actions
+    /// (`compensate_provisioning_row` / `mark_terminal_provisioning_row` /
+    /// `release_claim`) still run sequentially after the classify
+    /// fan-out, since they share write paths and serializing them
+    /// avoids per-row contention with no meaningful latency cost
+    /// (DB writes are 10–100× faster than the `IdP` RTT they
+    /// replace).
+    pub deprovision_concurrency: usize,
 }
 
 impl Default for ReaperConfig {
@@ -144,6 +159,7 @@ impl Default for ReaperConfig {
             tick_secs: 30,
             provisioning_timeout_secs: 300,
             batch_size: 64,
+            deprovision_concurrency: 8,
         }
     }
 }
@@ -228,6 +244,9 @@ impl AccountManagementConfig {
         }
         if self.retention.hard_delete_concurrency == 0 {
             bad.push("retention.hard_delete_concurrency (must be > 0; zero is normalised to 1 at the call site but rejected here so the misconfig is observable)");
+        }
+        if self.reaper.deprovision_concurrency == 0 {
+            bad.push("reaper.deprovision_concurrency (must be > 0; zero is normalised to 1 at the call site but rejected here so the misconfig is observable)");
         }
         if self.listing.max_top == 0 {
             bad.push("listing.max_top (must be > 0; zero would empty every listChildren response)");

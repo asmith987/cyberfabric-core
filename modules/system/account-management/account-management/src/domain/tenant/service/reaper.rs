@@ -29,6 +29,7 @@
 
 use std::time::Duration;
 
+use futures::stream::{self, StreamExt};
 use modkit_macros::domain_model;
 use modkit_security::AccessScope;
 use time::OffsetDateTime;
@@ -118,6 +119,15 @@ impl<R: TenantRepo> TenantService<R> {
                     error = %err,
                     "reap_stuck_provisioning: scan failed; skipping tick"
                 );
+                // Distinguish a healthy idle tick (zero stuck rows)
+                // from a tick that no-op'd because the scan faulted.
+                // Mirrors the symmetric signal in
+                // `hard_delete_batch`.
+                emit_metric(
+                    AM_TENANT_RETENTION,
+                    MetricKind::Counter,
+                    &[("job", "provisioning_reaper"), ("outcome", "scan_failed")],
+                );
                 return ReaperResult::default();
             }
         };
@@ -127,15 +137,81 @@ impl<R: TenantRepo> TenantService<R> {
             ..ReaperResult::default()
         };
 
-        let now = OffsetDateTime::now_utc();
-        for row in rows {
-            let claimed_by = row.claimed_by;
-            let outcome = self.classify_deprovision(row.id).await;
+        // IdP classify fan-out + DB action streaming. The
+        // `IdP::deprovision_tenant` call is the dominant per-row cost
+        // (full provider round-trip, hundreds of ms typical,
+        // multi-second on degraded providers); a sequential
+        // `for row in rows { … .await … }` would scale one tick as
+        // `batch_size × IdP_RTT` and risk slipping past
+        // `reaper.tick_secs`.
+        //
+        // `buffer_unordered(concurrency)` polls up to
+        // `deprovision_concurrency` IdP classifications in parallel
+        // within this task, and the `while let Some(...) = stream.next()`
+        // shape applies each row's DB action AS IT ARRIVES rather
+        // than after `collect()` waits for the slowest classification.
+        // Streaming matters here because:
+        //   * one slow / hung IdP future would otherwise hold every
+        //     completed row's claim past `RETENTION_CLAIM_TTL` (~10 min),
+        //     letting a peer reaper re-claim and issue a duplicate
+        //     `deprovision_tenant` against the same tenant; and
+        //   * if the slow future never returns at all, every other row
+        //     in the batch would block indefinitely.
+        // DB writes themselves stay sequential — the `while let` body
+        // awaits each `compensate_provisioning_row` /
+        // `mark_terminal_provisioning_row` / `release_claim` before
+        // pulling the next stream item — which keeps `result` mutable-
+        // borrow-safe and avoids per-row contention on the `tenants`
+        // write path (DB write is 10–100× faster than the IdP RTT it
+        // serves, so this serialisation is invisible at the tick
+        // budget).
+        //
+        // We capture `classified_at` inside the per-row future so
+        // `terminal_failure_at` reflects the actual IdP-observation
+        // moment regardless of how long the row sits in the stream
+        // queue waiting for its DB-write turn.
+        //
+        // The `async move { self.classify_deprovision(id).await … }`
+        // closure intentionally captures `&self` shared across
+        // concurrent futures (every `TenantService<R: TenantRepo>` is
+        // `Sync` because all its fields — `repo: Arc<R>`, `idp: Arc<…>`,
+        // `cfg: AccountManagementConfig` (a plain value type with no
+        // interior mutability — `derive(Default, Deserialize)` over
+        // numeric / boolean knobs, no `Cell` / `RefCell` / `UnsafeCell`
+        // fields), `enforcer: Arc<…>`, and the
+        // `parking_lot::Mutex`-guarded hooks — are themselves `Sync`).
+        // `classify_deprovision` is read-only over `self.idp` /
+        // `self.cfg` and emits side-effect-free metrics, so concurrent
+        // shared access is safe. Do NOT "fix" this by cloning into
+        // each future or splitting handles — both would lose the
+        // streaming property without a corresponding correctness gain.
+        // If a future change introduces an interior-mutable field on
+        // `AccountManagementConfig`, this `&self` capture pattern
+        // needs a re-audit (an analogous comment lives next to the
+        // retention pipeline's symmetric streaming refactor).
+        //
+        // `validate()` rejects `deprovision_concurrency == 0` at
+        // startup; the `.max(1)` is defense-in-depth for hand-built
+        // configs (e.g. tests) that bypass `validate`.
+        let concurrency = self.cfg.reaper.deprovision_concurrency.max(1);
+        let mut stream = stream::iter(rows)
+            .map(|row| {
+                let id = row.id;
+                let claimed_by = row.claimed_by;
+                async move {
+                    let outcome = self.classify_deprovision(id).await;
+                    let classified_at = OffsetDateTime::now_utc();
+                    (id, claimed_by, outcome, classified_at)
+                }
+            })
+            .buffer_unordered(concurrency);
+
+        while let Some((id, claimed_by, outcome, classified_at)) = stream.next().await {
             match outcome {
                 ReaperOutcome::Compensable(label) => {
                     self.compensate_provisioning_row(
                         &system_scope,
-                        row.id,
+                        id,
                         claimed_by,
                         label,
                         &mut result,
@@ -145,16 +221,16 @@ impl<R: TenantRepo> TenantService<R> {
                 ReaperOutcome::Terminal => {
                     self.mark_terminal_provisioning_row(
                         &system_scope,
-                        row.id,
+                        id,
                         claimed_by,
-                        now,
+                        classified_at,
                         &mut result,
                     )
                     .await;
                 }
                 ReaperOutcome::Defer => {
                     result.deferred += 1;
-                    self.release_claim(&system_scope, row.id, claimed_by).await;
+                    self.release_claim(&system_scope, id, claimed_by).await;
                 }
             }
         }
@@ -493,6 +569,17 @@ impl<R: TenantRepo> TenantService<R> {
                 tenant_id = %tenant_id,
                 error = %err,
                 "reaper: failed to clear claim; will be released by RETENTION_CLAIM_TTL"
+            );
+            // Mirrors the symmetric signal in `hard_delete_batch`:
+            // separates a healthy claim release from a
+            // storage-fault-induced stale-claim cliff.
+            emit_metric(
+                AM_TENANT_RETENTION,
+                MetricKind::Counter,
+                &[
+                    ("job", "provisioning_reaper"),
+                    ("outcome", "claim_clear_failed"),
+                ],
             );
         }
     }

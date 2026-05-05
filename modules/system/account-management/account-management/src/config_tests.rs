@@ -103,6 +103,19 @@ fn rejects_zero_hard_delete_concurrency() {
 }
 
 #[test]
+fn rejects_zero_deprovision_concurrency() {
+    let cfg = AccountManagementConfig {
+        reaper: ReaperConfig {
+            deprovision_concurrency: 0,
+            ..ReaperConfig::default()
+        },
+        ..AccountManagementConfig::default()
+    };
+    let err = cfg.validate().expect_err("zero concurrency must reject");
+    assert!(err.contains("reaper.deprovision_concurrency"), "{err}");
+}
+
+#[test]
 fn rejects_zero_max_top() {
     let cfg = AccountManagementConfig {
         listing: ListingConfig { max_top: 0 },

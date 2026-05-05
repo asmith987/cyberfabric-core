@@ -1403,6 +1403,7 @@ dependencies = [
  "async-trait",
  "cf-modkit-canonical-errors",
  "cf-tenant-resolver-sdk",
+ "gts",
  "serde",
  "serde_json",
  "tokio",

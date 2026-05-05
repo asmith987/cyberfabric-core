@@ -37,7 +37,18 @@
 //!   flips to `true`.
 //!
 //! REST handlers MUST NOT be added on top of `TenantRepo` until
-//! `cyberfabric-core#1813` is closed.
+//! `cyberfabric-core#1813` is closed. The methods currently relying
+//! on this single-layer enforcement are:
+//!
+//! * [`TenantService::create_child`](crate::domain::tenant::service::TenantService::create_child)
+//! * [`TenantService::read_tenant`](crate::domain::tenant::service::TenantService::read_tenant)
+//! * [`TenantService::list_children`](crate::domain::tenant::service::TenantService::list_children)
+//! * [`TenantService::update_tenant`](crate::domain::tenant::service::TenantService::update_tenant)
+//! * [`TenantService::soft_delete`](crate::domain::tenant::service::TenantService::soft_delete)
+//!
+//! Reviewers of follow-on PRs that wire any of the above into a REST
+//! handler MUST verify `cyberfabric-core#1813` is closed before
+//! approving the wiring.
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 pub mod config;

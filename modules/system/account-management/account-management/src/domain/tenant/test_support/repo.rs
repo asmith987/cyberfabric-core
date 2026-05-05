@@ -137,6 +137,61 @@ impl FakeTenantRepo {
         self.state.lock().expect("lock").tenants.get(&id).cloned()
     }
 
+    /// Direct lookup of the per-row retention claim. `Some(uuid)`
+    /// means the row is currently claimed by the worker that scan-
+    /// claimed it; `None` means no live claim. Parking / claim-
+    /// release tests use this to assert end-of-tick state without
+    /// poking at `state.claims` directly.
+    pub fn find_claim_unchecked(&self, id: Uuid) -> Option<Uuid> {
+        self.state.lock().expect("lock").claims.get(&id).copied()
+    }
+
+    /// Whether a row carries a `terminal_failure_at` stamp (set by
+    /// either `mark_provisioning_terminal_failure` or
+    /// `mark_retention_terminal_failure`). Used by parking tests to
+    /// assert the marker landed without exposing the internal
+    /// `state.terminal_failures` map directly.
+    pub fn is_terminally_failed_unchecked(&self, id: Uuid) -> bool {
+        self.state
+            .lock()
+            .expect("lock")
+            .terminal_failures
+            .contains_key(&id)
+    }
+
+    /// Operator-cleanup helper: simulate the manual SQL UPDATE that
+    /// clears `terminal_failure_at`, allowing the row to re-enter
+    /// the scanner on the next tick. The cascade-hook /
+    /// IdP-terminal parking tests use this to pin the
+    /// "fix the bug, clear the marker, scanner picks it up again"
+    /// flow operators are expected to follow.
+    ///
+    /// Also clears `state.claims` for the row. Production releases
+    /// the claim immediately after parking
+    /// (`release_claim_now == true` on `CascadeTerminal` /
+    /// `IdpTerminal`), and any leftover claim ages out via
+    /// `RETENTION_CLAIM_TTL` (~10 min). The fake repo intentionally
+    /// omits TTL-based takeover (live claim = scanner skips, no
+    /// matter what), so without this clear the row would still be
+    /// invisible to the next scan even though `terminal_failure_at`
+    /// is gone — silently breaking the docstring contract above
+    /// for any test that relies on it.
+    ///
+    /// **Side effect:** the `state.claims` removal is unconditional —
+    /// it does NOT distinguish "leftover claim from the parking
+    /// worker" from "live claim from a peer worker that took over".
+    /// Tests that simulate a peer-claim race (e.g. seeding a peer
+    /// claim via [`Self::seed_claim`] to model TTL-elapsed
+    /// takeover) and then call this helper will lose the seeded peer
+    /// claim as a side effect. Such tests must drop `terminal_failure_at`
+    /// directly via `state.lock().terminal_failures.remove(...)`
+    /// instead of going through this helper.
+    pub fn clear_terminal_failure_unchecked(&self, id: Uuid) {
+        let mut state = self.state.lock().expect("lock");
+        state.terminal_failures.remove(&id);
+        state.claims.remove(&id);
+    }
+
     /// Snapshot all rows currently in the `Provisioning` state.
     pub fn snapshot_provisioning_rows(&self) -> Vec<TenantModel> {
         self.state
@@ -222,6 +277,42 @@ impl FakeTenantRepo {
             .insert(child, (now, Some(Duration::from_secs(0))));
         child
     }
+}
+
+/// Shared body for the two terminal-failure marking variants. Mirrors
+/// the symmetric helper in `repo_impl::lifecycle`: the only difference
+/// between provisioning- and retention-side parking is the `status`
+/// fence, so centralising the body keeps the claim / idempotency /
+/// status invariants identical for both pipelines without growing a
+/// "match anything" generalization. Returns `true` iff the marker
+/// landed; the trait method wraps in `Ok(...)` to match the
+/// production-side `Result<bool, DomainError>` signature even though
+/// the in-memory fake never produces a fault on this path.
+fn mark_terminal_failure_with_status(
+    state: &mut RepoState,
+    id: Uuid,
+    claimed_by: Uuid,
+    now: OffsetDateTime,
+    status: TenantStatus,
+) -> bool {
+    if state.claims.get(&id) != Some(&claimed_by) {
+        return false;
+    }
+    let Some(tenant) = state.tenants.get(&id) else {
+        return false;
+    };
+    if tenant.status != status {
+        return false;
+    }
+    // Idempotency fence — mirrors the production
+    // `terminal_failure_at IS NULL` predicate added to the SQL UPDATE.
+    // A retry on an already-marked row returns `false` so the
+    // caller does not double-bump the `terminal` counter / metric.
+    if state.terminal_failures.contains_key(&id) {
+        return false;
+    }
+    state.terminal_failures.insert(id, now);
+    true
 }
 
 /// Compute the set of tenant ids visible to `scope` on the `tenants`
@@ -611,6 +702,12 @@ impl TenantRepo for FakeTenantRepo {
             .tenants
             .values()
             .filter(|t| matches!(t.status, TenantStatus::Deleted))
+            // Mirror the SQL `terminal_failure_at IS NULL`
+            // predicate: rows the retention pipeline parked via
+            // `mark_retention_terminal_failure` are out of the
+            // retry loop until the marker is cleared. Symmetric to
+            // the `scan_stuck_provisioning` fake above.
+            .filter(|t| !state.terminal_failures.contains_key(&t.id))
             // Claimable: no live claim. The mock intentionally omits
             // TTL-based takeover; tests seed `state.claims` directly
             // when they need to model peer ownership.
@@ -796,26 +893,36 @@ impl TenantRepo for FakeTenantRepo {
         // AND the row is still `Provisioning`. Either invariant
         // failing means the caller's view is stale; report no-op
         // (`false`) so the caller treats it idempotently.
-        let mut state = self.state.lock().expect("lock");
-        if state.claims.get(&id) != Some(&claimed_by) {
-            return Ok(false);
-        }
-        let Some(tenant) = state.tenants.get(&id) else {
-            return Ok(false);
-        };
-        if !matches!(tenant.status, TenantStatus::Provisioning) {
-            return Ok(false);
-        }
-        // Idempotency fence — mirrors the production
-        // `terminal_failure_at IS NULL` predicate added to the
-        // SQL UPDATE. A retry on an already-marked row returns
-        // `Ok(false)` so the caller does not double-bump the
-        // `terminal` counter / metric.
-        if state.terminal_failures.contains_key(&id) {
-            return Ok(false);
-        }
-        state.terminal_failures.insert(id, now);
-        Ok(true)
+        Ok(mark_terminal_failure_with_status(
+            &mut self.state.lock().expect("lock"),
+            id,
+            claimed_by,
+            now,
+            TenantStatus::Provisioning,
+        ))
+    }
+
+    async fn mark_retention_terminal_failure(
+        &self,
+        _scope: &AccessScope,
+        id: Uuid,
+        claimed_by: Uuid,
+        now: OffsetDateTime,
+    ) -> Result<bool, DomainError> {
+        // Mirror the SQL fence in `repo_impl::lifecycle::mark_retention_terminal_failure`:
+        // refuse the mark unless this worker still holds the claim
+        // AND the row is still `Deleted`. Symmetric to the
+        // provisioning sibling above; backed by the same
+        // `state.terminal_failures` map because a tenant row can
+        // only be in one of `Provisioning` / `Deleted` at any
+        // given moment.
+        Ok(mark_terminal_failure_with_status(
+            &mut self.state.lock().expect("lock"),
+            id,
+            claimed_by,
+            now,
+            TenantStatus::Deleted,
+        ))
     }
 
     async fn check_hard_delete_eligibility(
