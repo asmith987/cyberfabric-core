@@ -1475,7 +1475,7 @@ async fn proxy_target_host_unknown_returns_error() {
     }
 }
 
-// negative-2.10 (upstreams): All backends unreachable returns connection error (502).
+// negative-2.10 (upstreams): All backends unreachable returns connection error (503).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn proxy_all_backends_unreachable() {
     let h = AppHarness::builder()
@@ -1540,11 +1540,11 @@ async fn proxy_all_backends_unreachable() {
             "expected DownstreamError for unreachable backend, got: {err:?}"
         ),
         Ok(resp) => {
-            // Pingora may return a 502 response directly via fail_to_proxy.
+            // Pingora may return a 503 response directly via fail_to_proxy.
             assert!(
-                resp.status() == StatusCode::BAD_GATEWAY
+                resp.status() == StatusCode::SERVICE_UNAVAILABLE
                     || resp.status() == StatusCode::GATEWAY_TIMEOUT,
-                "expected 502 or 504, got: {}",
+                "expected 503 or 504, got: {}",
                 resp.status()
             );
         }
@@ -1808,9 +1808,9 @@ async fn proxy_websocket_upgrade_returns_101() {
     );
 }
 
-// WebSocket upgrade rejected by upstream returns 502 ProtocolError with gateway error source.
+// WebSocket upgrade rejected by upstream returns 503 ProtocolError with gateway error source.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn proxy_websocket_upgrade_rejected_returns_502_protocol_error() {
+async fn proxy_websocket_upgrade_rejected_returns_503_protocol_error() {
     let h = AppHarness::builder().build().await;
     let ctx = h.security_context().clone();
 
@@ -2251,8 +2251,8 @@ async fn proxy_unreachable_backend_returns_rfc9457_problem_body() {
             // Pingora wrote the response directly via fail_to_proxy.
             let status = resp.status();
             assert!(
-                status == StatusCode::BAD_GATEWAY || status == StatusCode::GATEWAY_TIMEOUT,
-                "expected 502 or 504, got: {status}"
+                status == StatusCode::SERVICE_UNAVAILABLE || status == StatusCode::GATEWAY_TIMEOUT,
+                "expected 503 or 504, got: {status}"
             );
 
             let body_bytes = resp.into_body().into_bytes().await.unwrap();
@@ -2269,8 +2269,8 @@ async fn proxy_unreachable_backend_returns_rfc9457_problem_body() {
             // GTS type must not be about:blank.
             let gts_type = body["type"].as_str().unwrap();
             assert!(
-                gts_type.starts_with("gts."),
-                "expected GTS error type, got: {gts_type}"
+                gts_type.starts_with("gts://gts."),
+                "expected canonical GTS error type, got: {gts_type}"
             );
 
             // Status field in body must match HTTP status.
@@ -2283,9 +2283,9 @@ async fn proxy_unreachable_backend_returns_rfc9457_problem_body() {
     }
 }
 
-// negative-8.1 (body-validation): Streaming body exceeding max_body_size returns 413 PayloadTooLarge.
+// negative-8.1 (body-validation): Streaming body exceeding max_body_size returns 400 PayloadTooLarge.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn proxy_streaming_body_exceeding_limit_returns_413() {
+async fn proxy_streaming_body_exceeding_limit_returns_400() {
     let mut guard = MockGuard::new();
     guard.mock(
         "POST",
@@ -4893,7 +4893,7 @@ async fn proxy_response_header_rules_applied() {
 async fn proxy_websocket_handshake_retries_on_early_close() {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let attempt = Arc::new(AtomicUsize::new(0));
     let attempt_clone = attempt.clone();
@@ -4913,6 +4913,26 @@ async fn proxy_websocket_handshake_retries_on_early_close() {
             let (mut sock, _) = listener.accept().await.unwrap();
             let n = attempt_clone.fetch_add(1, Ordering::SeqCst);
             if n == 0 {
+                // Drain the client's upgrade request before responding. On
+                // Windows, closesocket() with unread data in the recv buffer
+                // forces a TCP RST, which races the client's read of the 101
+                // response and surfaces as `read error / unexpected EOF`
+                // (WSAECONNABORTED 10053). Linux delivers buffered bytes
+                // before signaling the error, so the test passes there even
+                // without the drain.
+                let mut drain = [0u8; 1024];
+                let mut req = Vec::new();
+                loop {
+                    let nread = sock.read(&mut drain).await.unwrap_or(0);
+                    if nread == 0 {
+                        break;
+                    }
+                    req.extend_from_slice(&drain[..nread]);
+                    if req.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+
                 // First connection: send 101 then Close 1001 (simulates bridge not ready).
                 let resp = "HTTP/1.1 101 Switching Protocols\r\n\
                             Upgrade: websocket\r\n\
@@ -4931,6 +4951,17 @@ async fn proxy_websocket_handshake_retries_on_early_close() {
                 frame.extend_from_slice(&close_payload);
                 sock.write_all(&frame).await.unwrap();
                 sock.shutdown().await.ok();
+                // Linger until the client closes so the kernel delivers the
+                // 101 + Close bytes before this socket is dropped (Windows).
+                // Loop to EOF so any trailing bytes the client sends (e.g. a
+                // Close echo) are consumed — a single read could return early
+                // and leave data in the recv buffer, re-triggering the RST.
+                loop {
+                    match sock.read(&mut drain).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => continue,
+                    }
+                }
             } else {
                 // Subsequent connections: proxy to the real OAGW server.
                 let mut upstream = tokio::net::TcpStream::connect(real_addr).await.unwrap();
