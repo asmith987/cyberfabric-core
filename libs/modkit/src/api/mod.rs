@@ -5,6 +5,7 @@
 //! response are specified.
 
 pub mod api_dto;
+pub mod canonical_error_layer;
 pub mod canonical_trace;
 pub mod error_layer;
 pub mod odata;
@@ -19,6 +20,7 @@ pub mod trace_layer;
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod odata_policy_tests;
 
+pub use canonical_error_layer::canonical_error_middleware;
 pub use error_layer::{
     IntoProblem, error_mapping_middleware, extract_trace_id, map_error_to_problem,
 };

@@ -12,7 +12,9 @@ use glob::{MatchOptions, Pattern};
 
 use crate::config::RoutePoliciesConfig;
 use crate::middleware::common;
-use modkit::api::Problem;
+use crate::middleware::errors::ApiGatewayRouteError;
+use modkit::api::canonical_prelude::CanonicalProblemMigrationExt;
+use modkit_canonical_errors::{CanonicalError, Problem};
 use modkit_security::SecurityContext;
 
 /// Compiled scope enforcement rules for efficient runtime matching.
@@ -110,9 +112,14 @@ impl ScopeEnforcementRules {
 
     /// Check if the given path, method, and token scopes satisfy the scope requirements.
     ///
-    /// Returns `Ok(())` if access is allowed, or `Err(problem)` if denied.
+    /// Returns `Ok(())` if access is allowed, or `Err(canonical)` if denied.
     #[allow(clippy::result_large_err)]
-    fn check(&self, path: &str, method: &str, token_scopes: &[String]) -> Result<(), Problem> {
+    fn check(
+        &self,
+        path: &str,
+        method: &str,
+        token_scopes: &[String],
+    ) -> Result<(), CanonicalError> {
         if !self.enabled {
             return Ok(());
         }
@@ -159,11 +166,9 @@ impl ScopeEnforcementRules {
                     "Route policy enforcement denied: insufficient scopes"
                 );
 
-                return Err(Problem::new(
-                    axum::http::StatusCode::FORBIDDEN,
-                    "Forbidden",
-                    "Insufficient token scopes for this resource",
-                ));
+                return Err(ApiGatewayRouteError::permission_denied()
+                    .with_reason("INSUFFICIENT_SCOPES")
+                    .create());
             }
         }
 
@@ -211,22 +216,24 @@ pub async fn scope_enforcement_middleware(
                 method = %method,
                 "Route policy enforcement denied: no SecurityContext for protected route"
             );
-            return Problem::new(
-                axum::http::StatusCode::UNAUTHORIZED,
-                "Unauthorized",
-                "Authentication required for this resource",
-            )
-            .into_response();
+            let err = CanonicalError::unauthenticated()
+                .with_reason("AUTH_REQUIRED")
+                .create();
+            return Problem::from(err)
+                .with_temporary_request_context(req.uri().path())
+                .into_response();
         }
         return next.run(req).await;
     };
 
     // Check scopes
-    if let Err(problem) = state
+    if let Err(canonical) = state
         .rules
         .check(&path, method, security_context.token_scopes())
     {
-        return problem.into_response();
+        return Problem::from(canonical)
+            .with_temporary_request_context(req.uri().path())
+            .into_response();
     }
 
     next.run(req).await
@@ -314,8 +321,14 @@ mod tests {
         let result = rules.check("/admin/users", "GET", &scopes);
         assert!(result.is_err());
 
-        let problem = result.unwrap_err();
-        assert_eq!(problem.status, axum::http::StatusCode::FORBIDDEN);
+        let canonical = result.unwrap_err();
+        let problem: Problem = canonical.into();
+        assert_eq!(problem.status, 403);
+        assert_eq!(
+            problem.problem_type,
+            "gts://gts.cf.core.errors.err.v1~cf.core.err.permission_denied.v1~"
+        );
+        assert_eq!(problem.context["reason"], "INSUFFICIENT_SCOPES");
     }
 
     #[test]
@@ -327,8 +340,13 @@ mod tests {
         let result = rules.check("/admin/users", "GET", &[]);
         assert!(result.is_err());
 
-        let problem = result.unwrap_err();
-        assert_eq!(problem.status, axum::http::StatusCode::FORBIDDEN);
+        let canonical = result.unwrap_err();
+        let problem: Problem = canonical.into();
+        assert_eq!(problem.status, 403);
+        assert_eq!(
+            problem.problem_type,
+            "gts://gts.cf.core.errors.err.v1~cf.core.err.permission_denied.v1~"
+        );
     }
 
     #[test]

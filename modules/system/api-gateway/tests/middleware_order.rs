@@ -104,7 +104,7 @@ async fn real_middlewares_observe_documented_order() -> Result<()> {
                 .body(Body::from("hi"))?,
         )
         .await?;
-    assert_eq!(res1.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    assert_eq!(res1.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
         res1.headers()
             .get("x-request-id")
@@ -223,7 +223,7 @@ async fn real_middlewares_observe_documented_order_with_prefix() -> Result<()> {
                 .body(Body::from("hi"))?,
         )
         .await?;
-    assert_eq!(res1.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    assert_eq!(res1.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
         res1.headers()
             .get("x-request-id")
