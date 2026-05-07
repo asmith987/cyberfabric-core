@@ -2202,6 +2202,7 @@ dependencies = [
  "axum",
  "cf-authz-resolver-sdk",
  "cf-modkit",
+ "cf-modkit-canonical-errors",
  "cf-modkit-db",
  "cf-modkit-db-macros",
  "cf-modkit-macros",
