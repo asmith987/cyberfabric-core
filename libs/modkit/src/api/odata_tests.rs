@@ -105,9 +105,9 @@ mod tests {
         let result = extract_odata_query(&mut parts, &()).await;
         assert!(result.is_err());
         let problem = result.unwrap_err();
-        // Extract status from the problem for testing
-        // OData errors return 422 (Unprocessable Entity) per GTS catalog
-        assert_eq!(problem.status, http::StatusCode::UNPROCESSABLE_ENTITY);
+        // Canonical `InvalidArgument` is 400 (u16); per the canonical-error
+        // migration this replaces the legacy 422 wire status.
+        assert_eq!(problem.status, 400);
 
         // Should have cursor (even if decode fails, it should try)
         // Note: The cursor in the test is not a valid base64url, but that's OK for this test

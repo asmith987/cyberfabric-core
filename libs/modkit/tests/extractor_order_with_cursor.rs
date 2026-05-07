@@ -10,7 +10,7 @@ use modkit::api::odata::OData;
 use tower::ServiceExt;
 
 #[tokio::test]
-async fn order_with_cursor_is_422() {
+async fn order_with_cursor_is_400() {
     // trivial route just to trigger extractor
     async fn handler(OData(_q): OData) -> &'static str {
         "ok"
@@ -25,14 +25,15 @@ async fn order_with_cursor_is_422() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    // OData errors return 422 (Unprocessable Entity) per GTS catalog
-    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    // Canonical `InvalidArgument` is 400 — replaces the legacy 422 wire status.
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
-    // Check body contains error about cursor/orderby conflict
+    // Check body mentions cursor/orderby conflict via the canonical
+    // `field_violations` context (field == "cursor", reason "ORDER_WITH_CURSOR"
+    // mapped from the `$orderby` field — see modkit-odata problem mapping).
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let s = String::from_utf8_lossy(&body);
-    // The error now uses the GTS catalog and mentions both cursor and orderby
-    assert!(s.contains("invalid_cursor") || s.contains("cursor") || s.contains("orderby"));
+    assert!(s.contains("orderby") || s.contains("cursor"));
 }
 
 #[tokio::test]
@@ -50,10 +51,10 @@ async fn cursor_only_is_ok() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    // Should be 422 due to invalid cursor format, but not about orderby conflict
+    // Expect a 400 for the malformed cursor, but the body must NOT mention
+    // an orderby/cursor conflict (this request only carries `cursor`).
     let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
     let s = String::from_utf8_lossy(&body);
-    // Should not mention orderby since we're only passing cursor
     assert!(!s.contains("orderby") || !s.contains("both"));
 }
 

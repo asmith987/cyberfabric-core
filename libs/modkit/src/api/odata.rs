@@ -1,5 +1,7 @@
 use axum::extract::{FromRequestParts, Query};
 use axum::http::request::Parts;
+use modkit_canonical_errors::Problem as CanonicalProblem;
+use modkit_odata::errors::OdataError;
 use modkit_odata::{CursorV1, Error as ODataError, ODataOrderBy, OrderKey, SortDir};
 use serde::Deserialize;
 
@@ -30,21 +32,30 @@ pub const MAX_ORDER_FIELDS: usize = 10;
 pub const MAX_SELECT_LEN: usize = 2048;
 pub const MAX_SELECT_FIELDS: usize = 100;
 
+/// Build a canonical `InvalidArgument` Problem keyed by the `$select` field.
+fn select_problem(detail: impl Into<String>, reason: &'static str) -> CanonicalProblem {
+    CanonicalProblem::from(
+        OdataError::invalid_argument()
+            .with_field_violation("$select", detail, reason)
+            .create(),
+    )
+}
+
 /// Parse $select string into a list of field names.
 /// Format: "field1, field2, field3, ..."
 /// Field names are case-insensitive and whitespace is trimmed.
 ///
 /// # Errors
-/// Returns a `Problem` if the select string is invalid.
+/// Returns a canonical `Problem` if the select string is invalid.
 #[allow(clippy::result_large_err)] // It's used without error in the parsing function, no idea why complains here
-pub fn parse_select(raw: &str) -> Result<Vec<String>, crate::api::problem::Problem> {
+pub fn parse_select(raw: &str) -> Result<Vec<String>, CanonicalProblem> {
     let raw = raw.trim();
     if raw.is_empty() {
-        return Err(crate::api::bad_request("$select cannot be empty"));
+        return Err(select_problem("$select cannot be empty", "INVALID_SELECT"));
     }
 
     if raw.len() > MAX_SELECT_LEN {
-        return Err(crate::api::bad_request("$select too long"));
+        return Err(select_problem("$select too long", "INVALID_SELECT"));
     }
 
     let fields: Vec<String> = raw
@@ -54,22 +65,27 @@ pub fn parse_select(raw: &str) -> Result<Vec<String>, crate::api::problem::Probl
         .collect();
 
     if fields.is_empty() {
-        return Err(crate::api::bad_request(
+        return Err(select_problem(
             "$select must contain at least one field",
+            "INVALID_SELECT",
         ));
     }
 
     if fields.len() > MAX_SELECT_FIELDS {
-        return Err(crate::api::bad_request("$select contains too many fields"));
+        return Err(select_problem(
+            "$select contains too many fields",
+            "INVALID_SELECT",
+        ));
     }
 
     // Check for duplicate fields
     let mut seen = std::collections::HashSet::new();
     for field in &fields {
         if !seen.insert(field.clone()) {
-            return Err(crate::api::bad_request(format!(
-                "duplicate field in $select: {field}",
-            )));
+            return Err(select_problem(
+                format!("duplicate field in $select: {field}"),
+                "INVALID_SELECT",
+            ));
         }
     }
 
@@ -134,23 +150,42 @@ pub fn parse_orderby(raw: &str) -> Result<ODataOrderBy, modkit_odata::Error> {
     Ok(ODataOrderBy(keys))
 }
 
+/// Build a canonical `InvalidArgument` Problem for the `$filter` field.
+fn filter_problem(detail: impl Into<String>, reason: &'static str) -> CanonicalProblem {
+    CanonicalProblem::from(
+        OdataError::invalid_argument()
+            .with_field_violation("$filter", detail, reason)
+            .create(),
+    )
+}
+
+/// Build a canonical `InvalidArgument` Problem for an unspecified query
+/// parameter (used for axum-level deserialization failures).
+fn query_params_problem(detail: impl Into<String>) -> CanonicalProblem {
+    CanonicalProblem::from(
+        OdataError::invalid_argument()
+            .with_field_violation("query", detail, "INVALID_QUERY_PARAMS")
+            .create(),
+    )
+}
+
 /// Extract and validate full `OData` query from request parts.
 /// - Parses $filter, $orderby, limit, cursor
 /// - Enforces budgets and validates formats
 /// - Returns unified `ODataQuery`
 ///
 /// # Errors
-/// Returns `Problem` if any `OData` parameter is invalid.
+/// Returns canonical `Problem` if any `OData` parameter is invalid.
 pub async fn extract_odata_query<S>(
     parts: &mut Parts,
     state: &S,
-) -> Result<ODataQuery, crate::api::problem::Problem>
+) -> Result<ODataQuery, CanonicalProblem>
 where
     S: Send + Sync,
 {
     let Query(params) = Query::<ODataParams>::from_request_parts(parts, state)
         .await
-        .map_err(|e| crate::api::bad_request(format!("Invalid query parameters: {e}")))?;
+        .map_err(|e| query_params_problem(format!("Invalid query parameters: {e}")))?;
 
     let mut query = ODataQuery::new();
 
@@ -159,7 +194,7 @@ where
         let raw = raw_filter.trim();
         if !raw.is_empty() {
             if raw.len() > MAX_FILTER_LEN {
-                return Err(crate::api::bad_request("Filter too long"));
+                return Err(filter_problem("Filter too long", "FILTER_TOO_LONG"));
             }
 
             // Parse filter string using modkit-odata
@@ -178,7 +213,7 @@ where
                     max_nodes = MAX_NODES,
                     "Filter complexity budget exceeded"
                 );
-                return Err(crate::api::bad_request("Filter too complex"));
+                return Err(filter_problem("Filter too complex", "FILTER_TOO_COMPLEX"));
             }
 
             // Generate filter hash for cursor consistency (use non-consuming accessor)
@@ -281,7 +316,7 @@ impl<S> FromRequestParts<S> for OData
 where
     S: Send + Sync,
 {
-    type Rejection = crate::api::problem::Problem;
+    type Rejection = CanonicalProblem;
 
     #[allow(clippy::manual_async_fn)]
     fn from_request_parts(

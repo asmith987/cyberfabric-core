@@ -1974,8 +1974,7 @@ version = "0.7.1"
 dependencies = [
  "base64 0.22.1",
  "bigdecimal",
- "cf-modkit-errors",
- "cf-modkit-errors-macro",
+ "cf-modkit-canonical-errors",
  "chrono",
  "chrono-tz",
  "hex",
@@ -1985,6 +1984,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 2.0.18",
+ "tracing",
  "utoipa",
  "uuid",
 ]

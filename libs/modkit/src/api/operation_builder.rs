@@ -1196,8 +1196,8 @@ where
         status: http::StatusCode,
         description: impl Into<String>,
     ) -> OperationBuilder<H, Present, S, A, L> {
-        // Ensure `Problem` schema is registered in components
-        let problem_name = ensure_schema::<crate::api::problem::Problem>(registry);
+        // Canonical Problem schema (RFC 9457 + GTS-typed). Component name "Problem".
+        let problem_name = ensure_schema::<modkit_canonical_errors::Problem>(registry);
         self.spec.responses.push(ResponseSpec {
             status: status.as_u16(),
             content_type: problem::APPLICATION_PROBLEM_JSON,
@@ -1351,7 +1351,8 @@ where
         status: http::StatusCode,
         description: impl Into<String>,
     ) -> Self {
-        let problem_name = ensure_schema::<crate::api::problem::Problem>(registry);
+        // Canonical Problem schema (RFC 9457 + GTS-typed). Component name "Problem".
+        let problem_name = ensure_schema::<modkit_canonical_errors::Problem>(registry);
         self.spec.responses.push(ResponseSpec {
             status: status.as_u16(),
             content_type: problem::APPLICATION_PROBLEM_JSON,
@@ -1419,7 +1420,8 @@ where
     /// - 500 Internal Server Error
     pub fn standard_errors(mut self, registry: &dyn OpenApiRegistry) -> Self {
         use http::StatusCode;
-        let problem_name = ensure_schema::<crate::api::problem::Problem>(registry);
+        // Canonical Problem schema (RFC 9457 + GTS-typed). Component name "Problem".
+        let problem_name = ensure_schema::<modkit_canonical_errors::Problem>(registry);
 
         let standard_errors = [
             (StatusCode::BAD_REQUEST, "Bad Request"),
@@ -1444,11 +1446,12 @@ where
         self
     }
 
-    /// Add 422 validation error response using `ValidationError` schema.
+    /// Add 422 validation error response using the canonical `Problem` schema.
     ///
-    /// This method adds a specific 422 Unprocessable Entity response that uses
-    /// the `ValidationError` schema instead of the generic Problem schema. Use this
-    /// for endpoints that perform input validation and need structured error details.
+    /// This method adds a 422 Unprocessable Entity response referencing the
+    /// canonical `Problem` (RFC 9457). Field-level violations are surfaced under
+    /// `context.field_violations[]` (canonical `InvalidArgument` category — see
+    /// `docs/arch/errors/DESIGN.md` §3.5).
     ///
     /// # Example
     ///
@@ -1481,14 +1484,16 @@ where
     /// # let _ = router;
     /// ```
     pub fn with_422_validation_error(mut self, registry: &dyn OpenApiRegistry) -> Self {
-        let validation_error_name =
-            ensure_schema::<crate::api::problem::ValidationErrorResponse>(registry);
+        // Canonical Problem schema (RFC 9457 + GTS-typed). Component name "Problem".
+        // Field-level violations surface under `context.field_violations[]`
+        // (canonical InvalidArgument category — see DESIGN.md §3.5).
+        let problem_name = ensure_schema::<modkit_canonical_errors::Problem>(registry);
 
         self.spec.responses.push(ResponseSpec {
             status: http::StatusCode::UNPROCESSABLE_ENTITY.as_u16(),
             content_type: problem::APPLICATION_PROBLEM_JSON,
             description: "Validation Error".to_owned(),
-            schema_name: Some(validation_error_name),
+            schema_name: Some(problem_name),
         });
 
         self

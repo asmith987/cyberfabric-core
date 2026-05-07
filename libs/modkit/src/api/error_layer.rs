@@ -5,11 +5,10 @@
 //! per-route boilerplate.
 
 use axum::{extract::Request, http::HeaderMap, middleware::Next, response::Response};
-use http::StatusCode;
 use std::any::Any;
 
-use crate::api::problem::Problem;
 use crate::config::ConfigError;
+use modkit_canonical_errors::{CanonicalError, Problem};
 use modkit_odata::Error as ODataError;
 
 /// Middleware function that provides centralized error mapping
@@ -60,109 +59,61 @@ pub fn extract_trace_id(headers: &HeaderMap) -> Option<String> {
         })
 }
 
+fn internal_problem(
+    detail: impl Into<String>,
+    instance: &str,
+    trace_id: Option<String>,
+) -> Problem {
+    let canonical = CanonicalError::internal(detail).create();
+    let mut problem = Problem::from(canonical);
+    problem.instance = Some(instance.to_owned());
+    problem.trace_id = trace_id;
+    problem
+}
+
 /// Centralized error mapping function
 ///
 /// This function provides a single place to convert all framework and module errors
-/// into consistent Problem responses with proper trace IDs and instance paths.
+/// into consistent canonical `Problem` responses with proper trace IDs and instance
+/// paths.
 pub fn map_error_to_problem(error: &dyn Any, instance: &str, trace_id: Option<String>) -> Problem {
-    // Try to downcast to known error types
     if let Some(odata_err) = error.downcast_ref::<ODataError>() {
         return crate::api::odata::error::odata_error_to_problem(odata_err, instance, trace_id);
     }
 
     if let Some(config_err) = error.downcast_ref::<ConfigError>() {
-        let mut problem = match config_err {
-            ConfigError::ModuleNotFound { module } => Problem::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Configuration Error",
-                format!("Module '{module}' configuration not found"),
-            )
-            .with_code("CONFIG_MODULE_NOT_FOUND")
-            .with_type("https://errors.example.com/CONFIG_MODULE_NOT_FOUND"),
-
-            ConfigError::InvalidModuleStructure { module } => Problem::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Configuration Error",
-                format!("Module '{module}' has invalid configuration structure"),
-            )
-            .with_code("CONFIG_INVALID_STRUCTURE")
-            .with_type("https://errors.example.com/CONFIG_INVALID_STRUCTURE"),
-
-            ConfigError::MissingConfigSection { module } => Problem::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Configuration Error",
-                format!("Module '{module}' is missing required config section"),
-            )
-            .with_code("CONFIG_MISSING_SECTION")
-            .with_type("https://errors.example.com/CONFIG_MISSING_SECTION"),
-
-            ConfigError::InvalidConfig { module, .. } => Problem::new(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Configuration Error",
-                format!("Module '{module}' has invalid configuration"),
-            )
-            .with_code("CONFIG_INVALID")
-            .with_type("https://errors.example.com/CONFIG_INVALID"),
-
+        let detail = match config_err {
+            ConfigError::ModuleNotFound { module } => {
+                format!("Module '{module}' configuration not found")
+            }
+            ConfigError::InvalidModuleStructure { module } => {
+                format!("Module '{module}' has invalid configuration structure")
+            }
+            ConfigError::MissingConfigSection { module } => {
+                format!("Module '{module}' is missing required config section")
+            }
+            ConfigError::InvalidConfig { module, .. } => {
+                format!("Module '{module}' has invalid configuration")
+            }
             ConfigError::VarExpand { module, source } => {
                 tracing::error!(
                     module = %module,
                     error = %source,
                     "Environment variable expansion failed in module config"
                 );
-                Problem::new(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Configuration Error",
-                    format!("Module '{module}' has invalid environment-backed configuration"),
-                )
-                .with_code("CONFIG_ENV_EXPAND")
-                .with_type("https://errors.example.com/CONFIG_ENV_EXPAND")
+                format!("Module '{module}' has invalid environment-backed configuration")
             }
         };
-
-        problem = problem.with_instance(instance);
-        if let Some(tid) = trace_id {
-            problem = problem.with_trace_id(tid);
-        }
-        return problem;
+        return internal_problem(detail, instance, trace_id);
     }
 
-    // Handle anyhow::Error
     if let Some(anyhow_err) = error.downcast_ref::<anyhow::Error>() {
-        let mut problem = Problem::new(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Internal Server Error",
-            "An internal error occurred",
-        )
-        .with_code("INTERNAL_ERROR")
-        .with_type("https://errors.example.com/INTERNAL_ERROR");
-
-        problem = problem.with_instance(instance);
-        if let Some(tid) = trace_id {
-            problem = problem.with_trace_id(tid);
-        }
-
-        // Log the full error for debugging
         tracing::error!(error = %anyhow_err, "Internal server error");
-        return problem;
-    }
-
-    // Fallback for unknown error types
-    let mut problem = Problem::new(
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Unknown Error",
-        "An unknown error occurred",
-    )
-    .with_code("UNKNOWN_ERROR")
-    .with_type("https://errors.example.com/UNKNOWN_ERROR");
-
-    problem = problem.with_instance(instance);
-    if let Some(tid) = trace_id {
-        problem = problem.with_trace_id(tid);
+        return internal_problem("An internal error occurred", instance, trace_id);
     }
 
     tracing::error!("Unknown error type in error mapping layer");
-    problem
+    internal_problem("An unknown error occurred", instance, trace_id)
 }
 
 /// Helper trait for converting errors to Problem responses with context
@@ -198,9 +149,9 @@ mod tests {
         let error = ODataError::InvalidFilter("malformed".to_owned());
         let problem = error.into_problem("/tests/v1/test", Some("trace123".to_owned()));
 
-        assert_eq!(problem.status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert!(problem.code.contains("invalid_filter"));
-        assert_eq!(problem.instance, "/tests/v1/test");
+        assert_eq!(problem.status, 400);
+        assert!(problem.problem_type.contains("invalid_argument"));
+        assert_eq!(problem.instance, Some("/tests/v1/test".to_owned()));
         assert_eq!(problem.trace_id, Some("trace123".to_owned()));
     }
 
@@ -211,10 +162,12 @@ mod tests {
         };
         let problem = error.into_problem("/tests/v1/test", None);
 
-        assert_eq!(problem.status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(problem.code, "CONFIG_MODULE_NOT_FOUND");
-        assert_eq!(problem.instance, "/tests/v1/test");
-        assert!(problem.detail.contains("test_module"));
+        // Canonical `Internal` errors emit a fixed wire `detail` and stash the
+        // descriptive cause in the (debug-only) diagnostic — module names are
+        // intentionally not echoed on the wire.
+        assert_eq!(problem.status, 500);
+        assert!(problem.problem_type.contains("internal"));
+        assert_eq!(problem.instance, Some("/tests/v1/test".to_owned()));
     }
 
     #[test]
@@ -222,9 +175,9 @@ mod tests {
         let error = anyhow::anyhow!("Something went wrong");
         let problem = error.into_problem("/tests/v1/test", Some("trace456".to_owned()));
 
-        assert_eq!(problem.status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(problem.code, "INTERNAL_ERROR");
-        assert_eq!(problem.instance, "/tests/v1/test");
+        assert_eq!(problem.status, 500);
+        assert!(problem.problem_type.contains("internal"));
+        assert_eq!(problem.instance, Some("/tests/v1/test".to_owned()));
         assert_eq!(problem.trace_id, Some("trace456".to_owned()));
     }
 
@@ -240,13 +193,9 @@ mod tests {
         };
         let problem = error.into_problem("/tests/v1/test", Some("trace789".to_owned()));
 
-        assert_eq!(problem.status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(problem.code, "CONFIG_ENV_EXPAND");
-        assert_eq!(
-            problem.type_url,
-            "https://errors.example.com/CONFIG_ENV_EXPAND"
-        );
-        assert_eq!(problem.instance, "/tests/v1/test");
+        assert_eq!(problem.status, 500);
+        assert!(problem.problem_type.contains("internal"));
+        assert_eq!(problem.instance, Some("/tests/v1/test".to_owned()));
         assert_eq!(problem.trace_id, Some("trace789".to_owned()));
 
         // Detail MUST NOT leak the env var name or the underlying error message.
@@ -260,8 +209,6 @@ mod tests {
             "detail must not contain source error text, got: {}",
             problem.detail,
         );
-        // It should still mention the module name (non-sensitive).
-        assert!(problem.detail.contains("my_mod"));
     }
 
     #[test]
