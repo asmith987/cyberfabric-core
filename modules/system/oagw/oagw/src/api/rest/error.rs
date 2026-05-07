@@ -4,13 +4,15 @@
 //! provides:
 //!
 //! * `From<DomainError> for CanonicalError` — long-lived mapping.
-//! * `From<DomainError> for Problem` — temporary shim that fills
-//!   `instance` / `trace_id` until the canonical error middleware lands.
 //! * `domain_error_to_problem` — convenience for management handlers that
-//!   already plumb the request URI through.
+//!   already plumb the request URI through. Pre-populates `Problem.instance`
+//!   from the supplied request URI so the canonical error middleware does
+//!   not overwrite it (the middleware fills `instance` only when it is
+//!   empty).
 //! * `error_response` — proxy-pipeline helper that produces an axum
 //!   `Response` with the gateway-specific `x-oagw-error-source`,
-//!   `Retry-After`, and `x-ratelimit-*` headers.
+//!   `Retry-After`, and `x-ratelimit-*` headers. `instance` / `trace_id`
+//!   are filled by the canonical error middleware on the way out.
 //!
 //! ## `permission_denied` is fixed-detail by design
 //!
@@ -37,7 +39,6 @@
 
 use axum::response::{IntoResponse, Response};
 use http::HeaderValue;
-use modkit::api::canonical_prelude::CanonicalProblemMigrationExt;
 use modkit_canonical_errors::{CanonicalError, Problem, resource_error};
 
 use crate::domain::error::DomainError;
@@ -110,12 +111,13 @@ pub struct OagwTransformPluginError;
 
 // TODO(cpt-cf-errors-component-error-middleware): the per-arm `tracing::warn!` /
 // `error!` / `debug!` calls below are transitional. DESIGN.md §3.6 reserves
-// error logging to the canonical error middleware (deferred per PRD §4.2):
-// once that middleware lands and starts logging WARN/ERROR with the
+// error logging to the canonical error middleware: now that the middleware
+// (`modkit::api::canonical_error_middleware`) logs WARN/ERROR with the
 // `trace_id`, every `tracing::*` call inside this `From` impl — plus the
-// matching log inside `guard_rejected_to_canonical` — should be removed in the
-// same PR that drops the `From<DomainError> for Problem` shim. Tracked
-// alongside the existing shim TODO further down the file.
+// matching log inside `guard_rejected_to_canonical` — should be removed in
+// a follow-up cleanup once we have confirmed parity of the structured
+// fields the per-arm logs currently emit (e.g. `upstream`, `origin`,
+// `method`) cannot be derived from the canonical context on the wire.
 impl From<DomainError> for CanonicalError {
     fn from(err: DomainError) -> Self {
         match err {
@@ -440,71 +442,20 @@ fn guard_rejected_to_canonical(
 }
 
 // ---------------------------------------------------------------------------
-// DomainError → Problem (temporary shim)
-// ---------------------------------------------------------------------------
-
-// TODO(cpt-cf-errors-component-error-middleware): drop this impl once
-// middleware injects trace_id/instance from request context. The
-// `From<DomainError> for CanonicalError` impl above is the long-lived
-// mapping; this wrapper exists only to keep handler signatures returning
-// `Problem` until middleware lands.
-impl From<DomainError> for Problem {
-    fn from(err: DomainError) -> Self {
-        let instance = preferred_instance(&err).to_owned();
-        Problem::from(CanonicalError::from(err)).with_temporary_request_context(instance)
-    }
-}
-
-/// Pull the per-variant `instance` field out of the domain error so the
-/// shim above can populate `Problem.instance` with the request URI that
-/// the proxy/data-plane already carries. Falls back to `"/"` for variants
-/// that do not embed an instance (NotFound, Conflict, plugin CRUD, etc.).
-fn preferred_instance(err: &DomainError) -> &str {
-    match err {
-        DomainError::Validation { instance, .. }
-        | DomainError::MissingTargetHost { instance, .. }
-        | DomainError::InvalidTargetHost { instance, .. }
-        | DomainError::UnknownTargetHost { instance, .. }
-        | DomainError::AuthenticationFailed { instance, .. }
-        | DomainError::PayloadTooLarge { instance, .. }
-        | DomainError::RateLimitExceeded { instance, .. }
-        | DomainError::SecretNotFound { instance, .. }
-        | DomainError::DownstreamError { instance, .. }
-        | DomainError::ProtocolError { instance, .. }
-        | DomainError::ConnectionTimeout { instance, .. }
-        | DomainError::RequestTimeout { instance, .. }
-        | DomainError::GuardRejected { instance, .. }
-        | DomainError::CorsOriginNotAllowed { instance, .. }
-        | DomainError::CorsMethodNotAllowed { instance, .. }
-        | DomainError::StreamAborted { instance, .. }
-        | DomainError::LinkUnavailable { instance, .. }
-        | DomainError::CircuitBreakerOpen { instance, .. }
-        | DomainError::IdleTimeout { instance, .. } => {
-            if instance.is_empty() {
-                "/"
-            } else {
-                instance.as_str()
-            }
-        }
-        DomainError::NotFound { .. }
-        | DomainError::Conflict { .. }
-        | DomainError::UpstreamDisabled { .. }
-        | DomainError::Internal { .. }
-        | DomainError::PluginNotFound { .. }
-        | DomainError::PluginInUse { .. }
-        | DomainError::Forbidden { .. } => "/",
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Convenience functions for handlers
 // ---------------------------------------------------------------------------
 
-/// Convert a `DomainError` into a canonical `Problem`, overriding the
-/// default `instance` placeholder with the supplied request URI. Used by
-/// management API handlers that already plumb `instance` through.
+/// Convert a `DomainError` into a canonical `Problem`, pre-populating
+/// `instance` from the supplied request URI. Used by management API
+/// handlers that already plumb `instance` through.
+///
+/// `instance` is set explicitly so the canonical error middleware does
+/// not overwrite it on the way out (the middleware fills `instance` only
+/// when it is empty).
 pub(crate) fn domain_error_to_problem(err: DomainError, instance: &str) -> Problem {
-    Problem::from(CanonicalError::from(err)).with_temporary_request_context(instance)
+    let mut problem = Problem::from(CanonicalError::from(err));
+    problem.instance = Some(instance.to_owned());
+    problem
 }
 
 /// Convert a `DomainError` into an axum `Response` with the
@@ -514,6 +465,10 @@ pub(crate) fn domain_error_to_problem(err: DomainError, instance: &str) -> Probl
 /// is converted into wire headers (`Retry-After`, `X-RateLimit-*`) and the
 /// detail is sanitised to avoid leaking internal key structure (resource
 /// IDs, tenant IDs, scope) in the body.
+///
+/// `instance` / `trace_id` are NOT set here — the canonical error
+/// middleware (`modkit::api::canonical_error_middleware`) injects them on
+/// the response on the way out via the same router this helper feeds into.
 pub fn error_response(err: DomainError) -> Response {
     let rate_limit_meta = match &err {
         DomainError::RateLimitExceeded {
@@ -526,7 +481,8 @@ pub fn error_response(err: DomainError) -> Response {
         _ => None,
     };
 
-    let mut problem: Problem = err.into();
+    let canonical = CanonicalError::from(err);
+    let mut problem = Problem::from(canonical);
 
     if rate_limit_meta.is_some() {
         problem.detail =
@@ -571,6 +527,23 @@ pub fn error_response(err: DomainError) -> Response {
 mod tests {
     use super::*;
 
+    /// Build the wire `Problem` the canonical error middleware would emit
+    /// for a given `DomainError`. Tests run without the middleware in
+    /// scope, so `instance` / `trace_id` stay `None` here — that injection
+    /// is exercised by integration tests that drive the full router.
+    trait IntoTestProblem {
+        fn into_test_problem(self) -> Problem;
+    }
+
+    impl<E> IntoTestProblem for E
+    where
+        CanonicalError: From<E>,
+    {
+        fn into_test_problem(self) -> Problem {
+            Problem::from(CanonicalError::from(self))
+        }
+    }
+
     const NOT_FOUND_TYPE: &str = "gts://gts.cf.core.errors.err.v1~cf.core.err.not_found.v1~";
     const INVALID_ARGUMENT_TYPE: &str =
         "gts://gts.cf.core.errors.err.v1~cf.core.err.invalid_argument.v1~";
@@ -587,11 +560,15 @@ mod tests {
             detail: "missing required field 'server'".into(),
             instance: "/oagw/v1/upstreams".into(),
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 400);
         assert_eq!(p.problem_type, INVALID_ARGUMENT_TYPE);
         assert_eq!(p.title, "Invalid Argument");
-        assert_eq!(p.instance.as_deref(), Some("/oagw/v1/upstreams"));
+        // `instance` is filled by the canonical error middleware on the
+        // way out; at the conversion layer it stays `None`. The end-to-end
+        // wire value is exercised by integration tests that drive the
+        // full router.
+        assert!(p.instance.is_none());
         // Field-scoped variant carries the violation in
         // `context.field_violations[]` per the canonical FieldViolations
         // schema; the top-level detail stays the canonical default.
@@ -617,7 +594,7 @@ mod tests {
         // case) emit the canonical Format variant so the wire body
         // doesn't lie about which field was bad.
         let err = DomainError::validation("alias must be 1-63 chars");
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 400);
         assert_eq!(p.problem_type, INVALID_ARGUMENT_TYPE);
         // No field_violations array — this is the Format variant.
@@ -642,7 +619,7 @@ mod tests {
             resource: "my-alias".into(),
             detail: "alias already exists".into(),
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 409);
         assert_eq!(p.problem_type, ALREADY_EXISTS_TYPE);
         assert_eq!(p.context["resource_name"], "my-alias");
@@ -659,7 +636,7 @@ mod tests {
             remaining: Some(0),
             reset_epoch: Some(1706626800),
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 429);
         assert_eq!(p.problem_type, RESOURCE_EXHAUSTED_TYPE);
     }
@@ -670,7 +647,7 @@ mod tests {
             entity: "route",
             id: uuid::Uuid::nil(),
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 404);
         assert_eq!(p.problem_type, NOT_FOUND_TYPE);
     }
@@ -681,7 +658,7 @@ mod tests {
             gts_id: "gts.cf.core.oagw.auth_plugin.v1~cf.core.oagw.apikey.v1".into(),
             detail: "auth plugin not registered".into(),
         };
-        let p: Problem = auth.into();
+        let p: Problem = auth.into_test_problem();
         assert_eq!(p.status, 404);
         assert_eq!(p.context["resource_type"], gts::AUTH_PLUGIN_SCHEMA);
         assert_eq!(
@@ -693,14 +670,14 @@ mod tests {
             gts_id: "gts.cf.core.oagw.guard_plugin.v1~cf.core.oagw.timeout.v1".into(),
             detail: "guard plugin not registered".into(),
         };
-        let p: Problem = guard.into();
+        let p: Problem = guard.into_test_problem();
         assert_eq!(p.context["resource_type"], gts::GUARD_PLUGIN_SCHEMA);
 
         let xform = DomainError::PluginInUse {
             gts_id: "gts.cf.core.oagw.transform_plugin.v1~cf.core.oagw.logging.v1".into(),
             detail: "transform plugin in use".into(),
         };
-        let p: Problem = xform.into();
+        let p: Problem = xform.into_test_problem();
         assert_eq!(p.status, 409);
         assert_eq!(p.context["resource_type"], gts::TRANSFORM_PLUGIN_SCHEMA);
     }
@@ -712,7 +689,7 @@ mod tests {
         // verify each oagw → service_unavailable path populates it with
         // the per-failure-mode default.
         fn assert_retry(err: DomainError, expected: u64, label: &str) {
-            let p: Problem = err.into();
+            let p: Problem = err.into_test_problem();
             assert_eq!(p.status, 503, "{label} should map to 503");
             assert_eq!(
                 p.context["retry_after_seconds"].as_u64(),
@@ -788,7 +765,7 @@ mod tests {
             detail: "request body exceeds 100MB limit".into(),
             instance: "/oagw/v1/proxy/api.openai.com/v1/chat".into(),
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         // ⚠ wire change accepted in the migration plan: 413 → 400.
         assert_eq!(p.status, 400);
     }
@@ -799,7 +776,7 @@ mod tests {
             detail: "upstream connection refused".into(),
             instance: "/oagw/v1/proxy/api.openai.com/v1/chat".into(),
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         // ⚠ wire change accepted in the migration plan: 502 → 503.
         assert_eq!(p.status, 503);
     }
@@ -810,7 +787,7 @@ mod tests {
             detail: "upstream HTTP/2 error".into(),
             instance: "/oagw/v1/proxy/api.openai.com/v1/chat".into(),
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 503);
     }
 
@@ -820,7 +797,7 @@ mod tests {
             detail: "upstream stream read error".into(),
             instance: "/oagw/v1/proxy/api.openai.com/v1/chat".into(),
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 503);
     }
 
@@ -940,7 +917,7 @@ mod tests {
             },
         ];
         for err in errors {
-            let p: Problem = err.into();
+            let p: Problem = err.into_test_problem();
             let json = serde_json::to_string(&p).unwrap();
             let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
             assert!(parsed.get("type").is_some());
@@ -985,7 +962,7 @@ mod tests {
             instance: "/test".into(),
             resource_id: None,
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 403);
     }
 
@@ -998,7 +975,7 @@ mod tests {
             instance: "/test".into(),
             resource_id: None,
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 503);
     }
 
@@ -1011,7 +988,7 @@ mod tests {
             instance: "/test".into(),
             resource_id: None,
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 400);
     }
 
@@ -1024,7 +1001,7 @@ mod tests {
             instance: "/test".into(),
             resource_id: None,
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 400);
     }
 
@@ -1037,7 +1014,7 @@ mod tests {
             instance: "/test".into(),
             resource_id: None,
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 400);
     }
 
@@ -1050,7 +1027,7 @@ mod tests {
             instance: "/test".into(),
             resource_id: Some("widget-42".into()),
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 404);
         assert_eq!(p.problem_type, NOT_FOUND_TYPE);
         assert_eq!(p.context["resource_name"], "widget-42");
@@ -1066,7 +1043,7 @@ mod tests {
             instance: "/test".into(),
             resource_id: None,
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 400);
         assert_eq!(
             p.problem_type,
@@ -1085,7 +1062,7 @@ mod tests {
             instance: "/test".into(),
             resource_id: Some("invoice-7".into()),
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 409);
         assert_eq!(p.problem_type, ALREADY_EXISTS_TYPE);
         assert_eq!(p.context["resource_name"], "invoice-7");
@@ -1101,7 +1078,7 @@ mod tests {
             instance: "/test".into(),
             resource_id: None,
         };
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 409);
         assert_eq!(
             p.problem_type,
@@ -1125,7 +1102,7 @@ mod tests {
                 detail: "plugin failed".into(),
                 instance: "/test".into(),
             };
-            let p: Problem = err.into();
+            let p: Problem = err.into_test_problem();
             assert_eq!(p.status, 401);
             assert_eq!(
                 p.problem_type,
@@ -1144,7 +1121,7 @@ mod tests {
             "TENANT_BOUNDARY_VIOLATION",
             "subject not allowed to act outside its tenant",
         );
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.status, 403);
         assert_eq!(p.context["reason"], "TENANT_BOUNDARY_VIOLATION");
     }
@@ -1155,7 +1132,7 @@ mod tests {
         // have a more specific code — the default is the stable
         // `AUTHZ_DENIED` taxonomy member.
         let err = DomainError::forbidden("policy denied");
-        let p: Problem = err.into();
+        let p: Problem = err.into_test_problem();
         assert_eq!(p.context["reason"], "AUTHZ_DENIED");
     }
 
