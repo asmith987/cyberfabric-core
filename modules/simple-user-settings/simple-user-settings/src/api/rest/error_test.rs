@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::domain::error::DomainError;
-    use modkit_canonical_errors::{CanonicalError, Problem};
+    use modkit_errors::{CanonicalError, Problem};
 
     /// Build the wire `Problem` the canonical error middleware would emit
     /// for a given `DomainError`. Tests run without the middleware in

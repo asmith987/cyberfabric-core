@@ -6,7 +6,7 @@
 //!   `service::pep::TENANT` and friends in the impl crate).
 //! * `resource_type` field on the canonical-error envelope produced
 //!   when an AM domain failure converts to
-//!   [`modkit_canonical_errors::CanonicalError`] at the module
+//!   [`modkit_errors::CanonicalError`] at the module
 //!   boundary.
 //! * Future cross-module event consumers and sibling modules that
 //!   pattern-match on AM-emitted events (event-bus contract TBD) —
@@ -23,7 +23,7 @@
 //!
 //! # Note on `#[resource_error]` macro arguments
 //!
-//! The `modkit_canonical_errors::resource_error` proc-macro takes a
+//! The `modkit_errors::resource_error` proc-macro takes a
 //! literal string at expansion time and cannot resolve constants —
 //! the impl-crate sites that call the macro therefore duplicate
 //! these literals. The `domain::error_tests` module asserts the

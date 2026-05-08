@@ -4,7 +4,7 @@
 //! uses for inter-module Rust callers and for REST `Problem`
 //! conversion. After the AIP-193 migration, AM no longer carries an
 //! AM-specific public error enum; callers depend on
-//! [`modkit_canonical_errors::CanonicalError`] directly, surfaced here
+//! [`modkit_errors::CanonicalError`] directly, surfaced here
 //! as [`AccountManagementError`] for backwards-readability with the
 //! `resource-group-sdk` / `tenant-resolver-sdk` naming pattern.
 //!
@@ -54,8 +54,8 @@ pub use idp::{
     CheckAvailabilityFailure, DeprovisionFailure, DeprovisionRequest, IdpTenantProvisionerClient,
     ProvisionFailure, ProvisionMetadataEntry, ProvisionRequest, ProvisionResult,
 };
-pub use modkit_canonical_errors::CanonicalError as AccountManagementError;
-pub use modkit_canonical_errors::{self, CanonicalError, Problem};
+pub use modkit_errors::CanonicalError as AccountManagementError;
+pub use modkit_errors::{self, CanonicalError, Problem};
 pub use tenant::{
     CreateChildInput, ListChildrenQuery, ListChildrenQueryError, TenantId, TenantInfo, TenantPage,
     TenantStatus, TenantUpdate,

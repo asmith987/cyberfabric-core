@@ -1,14 +1,14 @@
 //! REST error mapping for the mini-chat module.
 //!
 //! Maps domain-layer errors (`DomainError`, `MutationError`, `StreamError`)
-//! to canonical errors (`modkit-canonical-errors`) following the same pattern
+//! to canonical errors (`modkit-errors`) following the same pattern
 //! used in `oagw` and `file-parser`. Provides `From<*>` for `CanonicalError`
 //! — the long-lived mappings. Handlers return `ApiResult<T>`
 //! (`= Result<T, CanonicalError>`); the canonical error middleware
-//! (`modkit::api::canonical_error_middleware`) converts `CanonicalError` to
+//! (`modkit::api::error_middleware`) converts `CanonicalError` to
 //! a wire `Problem` and fills `instance` / `trace_id` post-response.
 
-use modkit_canonical_errors::{CanonicalError, resource_error};
+use modkit_errors::{CanonicalError, resource_error};
 
 use crate::domain::error::DomainError;
 use crate::domain::service::{MutationError, StreamError};
@@ -350,7 +350,7 @@ impl From<StreamError> for CanonicalError {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
-    use modkit_canonical_errors::Problem;
+    use modkit_errors::Problem;
     use uuid::Uuid;
 
     /// Build the wire `Problem` the canonical error middleware would emit

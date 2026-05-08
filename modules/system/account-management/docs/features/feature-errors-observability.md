@@ -105,7 +105,7 @@ One generic flow models how a domain failure surfaces from any AM feature's code
 
 **Input**: `DomainError` instance (variant plus feature-specific diagnostic fields).
 
-**Output**: An AIP-193 [`CanonicalError`](../../../../../libs/modkit-canonical-errors/) which the SDK re-exports as `AccountManagementError` and which the platform converts into the RFC 9457 `Problem` envelope at the REST boundary. AM does not invent a private HTTP-status table; the status code is a property of the canonical category. Fine-grained discriminators (`INVALID_TENANT_TYPE`, `TENANT_HAS_CHILDREN`, `SERIALIZATION_CONFLICT`, …) ride inside the envelope as `reason` tokens on field/precondition/quota violations, not as a private AM-side `code` field.
+**Output**: An AIP-193 [`CanonicalError`](../../../../../libs/modkit-errors/) which the SDK re-exports as `AccountManagementError` and which the platform converts into the RFC 9457 `Problem` envelope at the REST boundary. AM does not invent a private HTTP-status table; the status code is a property of the canonical category. Fine-grained discriminators (`INVALID_TENANT_TYPE`, `TENANT_HAS_CHILDREN`, `SERIALIZATION_CONFLICT`, …) ride inside the envelope as `reason` tokens on field/precondition/quota violations, not as a private AM-side `code` field.
 
 **Steps**:
 
@@ -200,7 +200,7 @@ One generic flow models how a domain failure surfaces from any AM feature's code
 
 - [x] `p1` - **ID**: `cpt-cf-account-management-dod-errors-observability-error-taxonomy-and-envelope`
 
-**PR1 scope**: `DomainError` enum + `From<DomainError> for CanonicalError` (AIP-193 boundary mapping) ship in `domain/error.rs`. The RFC 9457 `Problem` envelope rendering at the REST handler boundary uses [`modkit_canonical_errors::Problem`](../../../../../libs/modkit-canonical-errors/) directly and arrives with the REST surface in a later PR.
+**PR1 scope**: `DomainError` enum + `From<DomainError> for CanonicalError` (AIP-193 boundary mapping) ship in `domain/error.rs`. The RFC 9457 `Problem` envelope rendering at the REST handler boundary uses [`modkit_errors::Problem`](../../../../../libs/modkit-errors/) directly and arrives with the REST surface in a later PR.
 
 The module **MUST** map every domain failure to one of the AIP-193 canonical categories enumerated in PRD §5.8 / DESIGN §3.8 — `InvalidArgument`, `NotFound`, `FailedPrecondition`, `Aborted`, `AlreadyExists`, `PermissionDenied`, `ResourceExhausted`, `ServiceUnavailable`, `Unimplemented`, `Internal` — and **MUST NOT** mint AM-private categories or override the AIP-193 HTTP-status table. Fine-grained discriminators ride inside the canonical envelope as `reason` tokens on field/precondition/quota violations or in `resource_type` / `resource_name`. Unclassified domain errors **MUST** fall through to `CanonicalError::Internal` rather than leaking new public categories.
 

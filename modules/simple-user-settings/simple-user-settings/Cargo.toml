@@ -41,7 +41,7 @@ thiserror = { workspace = true }
 modkit = { workspace = true }
 modkit-db = { workspace = true, features = ["sqlite"] }
 modkit-db-macros = { workspace = true }
-modkit-canonical-errors = { workspace = true, features = ["axum"] }
+modkit-errors = { workspace = true, features = ["axum"] }
 modkit-security = { workspace = true }
 modkit-macros = { workspace = true }
 

@@ -1,29 +1,20 @@
-//! Core error types for the modkit framework
-//!
-//! This crate provides pure data types for error handling, with no dependencies
-//! on HTTP frameworks. It includes:
-//! - RFC 9457 Problem Details (`Problem`)
-//! - Error catalog support (`ErrDef`)
-#![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+extern crate self as modkit_errors;
 
-pub mod catalog;
+pub mod builder;
+pub mod context;
+pub mod error;
 pub mod problem;
 
-// Re-export commonly used types
-pub use catalog::ErrDef;
-pub use problem::{
-    APPLICATION_PROBLEM_JSON, Problem, ValidationError, ValidationErrorResponse,
-    ValidationViolation,
+pub use builder::{ResourceErrorBuilder, ServiceUnavailableBuilder};
+pub use context::{
+    Aborted, AbortedV1, AlreadyExists, AlreadyExistsV1, Cancelled, CancelledV1, DataLoss,
+    DataLossV1, DeadlineExceeded, DeadlineExceededV1, FailedPrecondition, FailedPreconditionV1,
+    FieldViolation, FieldViolationV1, Internal, InternalV1, InvalidArgument, InvalidArgumentV1,
+    NotFound, NotFoundV1, OutOfRange, OutOfRangeV1, PermissionDenied, PermissionDeniedV1,
+    PreconditionViolation, PreconditionViolationV1, QuotaViolation, QuotaViolationV1,
+    ResourceExhausted, ResourceExhaustedV1, ServiceUnavailable, ServiceUnavailableV1,
+    Unauthenticated, UnauthenticatedV1, Unimplemented, UnimplementedV1, Unknown, UnknownV1,
 };
-
-/// Helper to attach instance and `trace_id` to a Problem
-///
-/// This is a convenience function for enriching Problem instances with
-/// request-specific context before returning them as HTTP responses.
-pub fn finalize(mut p: Problem, instance: &str, trace_id: Option<String>) -> Problem {
-    p = p.with_instance(instance);
-    if let Some(tid) = trace_id {
-        p = p.with_trace_id(tid);
-    }
-    p
-}
+pub use error::CanonicalError;
+pub use modkit_errors_macro::resource_error;
+pub use problem::Problem;

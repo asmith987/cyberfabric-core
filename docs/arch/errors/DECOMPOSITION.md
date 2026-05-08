@@ -14,7 +14,7 @@ This decomposition organizes the canonical error migration into sequential imple
 
 - [ ] `p1` - **ID**: `cpt-cf-errors-feature-foundation`
 
-Build the `CanonicalError` enum, context types, `Problem` mapping, and `#[resource_error]` macro in `libs/modkit-canonical-errors`.
+Build the `CanonicalError` enum, context types, `Problem` mapping, and `#[resource_error]` macro in `libs/modkit-errors`.
 
 > Traces to: `cpt-cf-errors-component-canonical-error`, `cpt-cf-errors-component-context-types`, `cpt-cf-errors-component-rest-mapping`, `cpt-cf-errors-component-resource-error-macro`
 
@@ -41,7 +41,7 @@ Build the `CanonicalError` enum, context types, `Problem` mapping, and `#[resour
 
 > Traces to: `cpt-cf-errors-component-resource-error-macro`, `cpt-cf-errors-constraint-macro-gts-construction`
 
-- [ ] 1.3.1 Implement `#[resource_error]` attribute macro in `libs/modkit-canonical-errors-macro/`
+- [ ] 1.3.1 Implement `#[resource_error]` attribute macro in `libs/modkit-errors-macro/`
 - [ ] 1.3.2 Generate 15 associated functions per annotated struct (all categories except `service_unavailable`). For `not_found`, `already_exists`, and `data_loss`: take a single `impl Into<String>` (resource name) and construct the context type internally; other categories take the category-specific context type
 - [ ] 1.3.3 Validate GTS identifier at compile time — must be a valid GTS type ID registered in the Types Registry and must end with `~`
 

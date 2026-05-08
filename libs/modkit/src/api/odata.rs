@@ -1,6 +1,6 @@
 use axum::extract::{FromRequestParts, Query};
 use axum::http::request::Parts;
-use modkit_canonical_errors::Problem as CanonicalProblem;
+use modkit_errors::Problem as CanonicalProblem;
 use modkit_odata::errors::OdataError;
 use modkit_odata::{CursorV1, Error as ODataError, ODataOrderBy, OrderKey, SortDir};
 use serde::Deserialize;

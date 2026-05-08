@@ -7,7 +7,7 @@ use http::Method;
 use std::sync::Arc;
 
 use modkit::api::OperationSpec;
-use modkit_canonical_errors::Problem;
+use modkit_errors::Problem;
 
 use crate::middleware::common;
 use crate::middleware::errors::ApiGatewayGatewayError;

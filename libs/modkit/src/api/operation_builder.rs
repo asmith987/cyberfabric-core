@@ -12,7 +12,8 @@
 //!   then use plain function handlers (no per-route closures that capture/clones).
 //! - Optional `method_router(...)` for advanced use (layers/middleware on route level).
 
-use crate::api::{api_dto, problem};
+use crate::api::api_dto;
+use modkit_errors::problem;
 use axum::{Router, handler::Handler, routing::MethodRouter};
 use http::Method;
 use serde::{Deserialize, Serialize};
@@ -1197,7 +1198,7 @@ where
         description: impl Into<String>,
     ) -> OperationBuilder<H, Present, S, A, L> {
         // Canonical Problem schema (RFC 9457 + GTS-typed). Component name "Problem".
-        let problem_name = ensure_schema::<modkit_canonical_errors::Problem>(registry);
+        let problem_name = ensure_schema::<modkit_errors::Problem>(registry);
         self.spec.responses.push(ResponseSpec {
             status: status.as_u16(),
             content_type: problem::APPLICATION_PROBLEM_JSON,
@@ -1352,7 +1353,7 @@ where
         description: impl Into<String>,
     ) -> Self {
         // Canonical Problem schema (RFC 9457 + GTS-typed). Component name "Problem".
-        let problem_name = ensure_schema::<modkit_canonical_errors::Problem>(registry);
+        let problem_name = ensure_schema::<modkit_errors::Problem>(registry);
         self.spec.responses.push(ResponseSpec {
             status: status.as_u16(),
             content_type: problem::APPLICATION_PROBLEM_JSON,
@@ -1421,7 +1422,7 @@ where
     pub fn standard_errors(mut self, registry: &dyn OpenApiRegistry) -> Self {
         use http::StatusCode;
         // Canonical Problem schema (RFC 9457 + GTS-typed). Component name "Problem".
-        let problem_name = ensure_schema::<modkit_canonical_errors::Problem>(registry);
+        let problem_name = ensure_schema::<modkit_errors::Problem>(registry);
 
         let standard_errors = [
             (StatusCode::BAD_REQUEST, "Bad Request"),
@@ -1487,7 +1488,7 @@ where
         // Canonical Problem schema (RFC 9457 + GTS-typed). Component name "Problem".
         // Field-level violations surface under `context.field_violations[]`
         // (canonical InvalidArgument category — see DESIGN.md §3.5).
-        let problem_name = ensure_schema::<modkit_canonical_errors::Problem>(registry);
+        let problem_name = ensure_schema::<modkit_errors::Problem>(registry);
 
         self.spec.responses.push(ResponseSpec {
             status: http::StatusCode::UNPROCESSABLE_ENTITY.as_u16(),
@@ -1859,7 +1860,7 @@ mod tests {
         for resp in error_responses {
             assert_eq!(
                 resp.content_type,
-                crate::api::problem::APPLICATION_PROBLEM_JSON
+                modkit_errors::problem::APPLICATION_PROBLEM_JSON
             );
             assert!(resp.schema_name.is_some());
         }
@@ -1977,7 +1978,7 @@ mod tests {
         assert_eq!(validation_response.description, "Validation Error");
         assert_eq!(
             validation_response.content_type,
-            crate::api::problem::APPLICATION_PROBLEM_JSON
+            modkit_errors::problem::APPLICATION_PROBLEM_JSON
         );
         assert!(validation_response.schema_name.is_some());
     }

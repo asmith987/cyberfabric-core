@@ -1,5 +1,5 @@
 //! Canonical resource scopes for api-gateway middleware.
-use modkit_canonical_errors::resource_error;
+use modkit_errors::resource_error;
 
 /// Errors attributable to a registered API gateway route
 /// (scope / license / RBAC).

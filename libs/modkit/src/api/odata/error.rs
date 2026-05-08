@@ -5,7 +5,7 @@
 //! here we convert `CanonicalError` to a wire `Problem` and attach
 //! request-scoped fields.
 
-use modkit_canonical_errors::{CanonicalError, Problem};
+use modkit_errors::{CanonicalError, Problem};
 use modkit_odata::Error as ODataError;
 
 #[inline]

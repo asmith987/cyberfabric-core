@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use modkit_canonical_errors::CanonicalError;
+use modkit_errors::CanonicalError;
 
 use super::DomainError;
 

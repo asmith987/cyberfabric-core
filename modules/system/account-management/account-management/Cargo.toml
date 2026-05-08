@@ -23,7 +23,7 @@ modkit-macros = { workspace = true }
 modkit-security = { workspace = true }
 modkit-db = { workspace = true, features = ["sqlite", "pg"] }
 modkit-db-macros = { workspace = true }
-modkit-canonical-errors = { workspace = true, features = ["sea-orm"] }
+modkit-errors = { workspace = true, features = ["sea-orm"] }
 modkit-odata = { workspace = true }
 resource-group-sdk = { workspace = true }
 tenant-resolver-sdk = { workspace = true }

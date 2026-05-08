@@ -1320,7 +1320,7 @@ The physical schema in [migration.sql](./migration.sql) must preserve these inva
 
 All errors follow the platform RFC 9457 Problem Details format and the
 Google AIP-193 canonical error model implemented by
-[`modkit-canonical-errors`](../../../../libs/modkit-canonical-errors/). AM
+[`modkit-errors`](../../../../libs/modkit-errors/). AM
 does not invent a private HTTP-status table — the status code is a
 property of the canonical category, fixed by AIP-193, and the AM SDK
 re-exports `CanonicalError` (as `AccountManagementError`) verbatim.

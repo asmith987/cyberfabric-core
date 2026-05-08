@@ -23,7 +23,8 @@ use utoipa::openapi::{
     security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
 };
 
-use crate::api::{operation_builder, problem};
+use crate::api::operation_builder;
+use modkit_errors::problem;
 
 /// Type alias for schema collections used in API operations.
 type SchemaCollection = Vec<(String, RefOr<Schema>)>;

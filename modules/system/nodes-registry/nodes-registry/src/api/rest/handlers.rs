@@ -2,7 +2,7 @@ use axum::{
     Extension,
     extract::{Path, Query},
 };
-use modkit::api::canonical_prelude::*;
+use modkit::api::prelude::*;
 use serde::Deserialize;
 use std::sync::Arc;
 

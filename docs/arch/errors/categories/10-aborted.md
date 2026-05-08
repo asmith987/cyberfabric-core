@@ -21,7 +21,7 @@
 ## Constructor Example
 
 ```rust
-use modkit_canonical_errors::resource_error;
+use modkit_errors::resource_error;
 
 #[resource_error("gts.cf.oagw.upstreams.upstream.v1~")]
 struct UpstreamResourceError;

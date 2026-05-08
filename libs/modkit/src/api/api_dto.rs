@@ -33,10 +33,8 @@ impl_api_dto_trait!(
     Box<T>,
     modkit_odata::Page<T>,
     Result<T, anyhow::Error>,
-    Result<T, modkit_errors::Problem>,
 );
 impl_api_dto_trait!(
     concrete:
     serde_json::Value,
-    modkit_errors::Problem,
 );

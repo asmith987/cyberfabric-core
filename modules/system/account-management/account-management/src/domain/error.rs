@@ -2,7 +2,7 @@
 //!
 //! Internal-only — never crosses module boundaries. On every boundary
 //! (REST handlers, inter-module SDK callers via `ClientHub`) this type
-//! is converted to [`modkit_canonical_errors::CanonicalError`] via
+//! is converted to [`modkit_errors::CanonicalError`] via
 //! [`From<DomainError> for CanonicalError`], following the AIP-193 error
 //! model. Public HTTP status codes and the stable error-code taxonomy
 //! are defined by the canonical-errors contract; AM's role is to map
@@ -122,7 +122,7 @@ pub enum DomainError {
     /// variant — used by repo paths that detect a state precondition
     /// violation (tenant deleted, type immutable, etc.) without a
     /// dedicated typed variant. Maps to
-    /// [`modkit_canonical_errors::CanonicalError::FailedPrecondition`].
+    /// [`modkit_errors::CanonicalError::FailedPrecondition`].
     #[error("precondition failed: {detail}")]
     Conflict { detail: String },
 
@@ -140,7 +140,7 @@ pub enum DomainError {
     /// Covers both transient infrastructure outages and `IdP` plugin
     /// unavailability (former separate `IdpUnavailable` category, now
     /// unified per AIP-193). `retry_after` populates
-    /// [`modkit_canonical_errors::context::ServiceUnavailable::retry_after_seconds`]
+    /// [`modkit_errors::context::ServiceUnavailable::retry_after_seconds`]
     /// when the caller has a defensible retry budget hint.
     ///
     /// `cause` carries the upstream error chain for non-DB sources

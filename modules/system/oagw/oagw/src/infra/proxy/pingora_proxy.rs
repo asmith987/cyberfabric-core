@@ -22,7 +22,7 @@ use uuid::Uuid;
 use crate::domain::error::DomainError;
 use crate::domain::model::{Endpoint, Scheme};
 use crate::domain::services::{EndpointSelector, SelectedEndpoint};
-use modkit_canonical_errors::Problem;
+use modkit_errors::Problem;
 
 use crate::api::rest::error::domain_error_to_problem;
 

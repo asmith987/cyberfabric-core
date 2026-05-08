@@ -1341,7 +1341,7 @@ async fn execute_transform_errors(
 /// transform plugins (`TransformErrorContext.status`) consistent with the
 /// status the client will actually observe on the wire.
 fn domain_error_status(err: &DomainError) -> u16 {
-    modkit_canonical_errors::CanonicalError::from(err.clone()).status_code()
+    modkit_errors::CanonicalError::from(err.clone()).status_code()
 }
 
 /// Short discriminant name for a `DomainError` variant.

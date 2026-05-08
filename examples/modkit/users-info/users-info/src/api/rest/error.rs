@@ -1,4 +1,4 @@
-use modkit::api::canonical_prelude::*;
+use modkit::api::prelude::*;
 
 use crate::domain::error::DomainError;
 

@@ -17,7 +17,7 @@ use modkit::{
     config::ConfigProvider,
     contracts::{ApiGatewayCapability, OpenApiRegistry},
 };
-use modkit_canonical_errors::Problem;
+use modkit_errors::Problem;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::time::{Duration, sleep};

@@ -1,5 +1,5 @@
 use crate::domain::error::DomainError;
-use modkit_canonical_errors::{CanonicalError, resource_error};
+use modkit_errors::{CanonicalError, resource_error};
 
 #[resource_error("gts.cf.nodes_registry.registry.node.v1~")]
 pub struct NodeError;

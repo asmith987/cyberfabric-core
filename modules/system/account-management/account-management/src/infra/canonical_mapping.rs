@@ -1,5 +1,5 @@
 //! Boundary mapping between AM's domain error model and the public
-//! [`modkit_canonical_errors::CanonicalError`] envelope.
+//! [`modkit_errors::CanonicalError`] envelope.
 //!
 //! Lives in `infra/` because the classification ladder reads
 //! `sea_orm::DbErr` SQLSTATE codes and `modkit_db::DbError` variant
@@ -13,7 +13,7 @@
 //!
 //! `TenantResource`, `TenantMetadataResource`, `ConversionRequestResource`
 //! are unit structs whose `#[resource_error]`-generated impls produce
-//! [`modkit_canonical_errors::ResourceErrorBuilder`]s tagged with the
+//! [`modkit_errors::ResourceErrorBuilder`]s tagged with the
 //! AM GTS resource types. The literal strings below MUST match the
 //! corresponding constants in `account_management_sdk::gts`; the
 //! `error_tests` module asserts equality at test time so a divergence
@@ -32,7 +32,7 @@
 //!   classifier, IO outages straight to `ServiceUnavailable`, and
 //!   anything else to `Internal` with a redacted diagnostic.
 
-use modkit_canonical_errors::{CanonicalError, resource_error};
+use modkit_errors::{CanonicalError, resource_error};
 use modkit_db::DbError;
 use modkit_db::secure::is_unique_violation;
 use sea_orm::DbErr;

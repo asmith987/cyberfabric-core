@@ -152,7 +152,7 @@ release-plz updates this file in the Release PR.
 
 * @Artifizer
 
-## [0.7.1](https://github.com/cyberfabric/cyberfabric-core/compare/cf-modkit-canonical-errors-v0.7.0...cf-modkit-canonical-errors-v0.7.1) - 2026-04-30
+## [0.7.1](https://github.com/cyberfabric/cyberfabric-core/compare/cf-modkit-errors-v0.7.0...cf-modkit-errors-v0.7.1) - 2026-04-30
 
 ### Added
 
@@ -168,7 +168,7 @@ release-plz updates this file in the Release PR.
 * @github-actions[bot]
 * @fluiderson
 
-## [0.7.1](https://github.com/cyberfabric/cyberfabric-core/compare/cf-modkit-canonical-errors-v0.7.0...cf-modkit-canonical-errors-v0.7.1) - 2026-04-30
+## [0.7.1](https://github.com/cyberfabric/cyberfabric-core/compare/cf-modkit-errors-v0.7.0...cf-modkit-errors-v0.7.1) - 2026-04-30
 
 ### Other
 
@@ -303,7 +303,7 @@ release-plz updates this file in the Release PR.
 
 - updated the following local packages: cf-modkit, cf-tenant-resolver-sdk
 
-## [0.7.0](https://github.com/cyberfabric/cyberfabric-core/compare/cf-modkit-canonical-errors-v0.6.1...cf-modkit-canonical-errors-v0.7.0) - 2026-04-22
+## [0.7.0](https://github.com/cyberfabric/cyberfabric-core/compare/cf-modkit-errors-v0.6.1...cf-modkit-errors-v0.7.0) - 2026-04-22
 
 ### Other
 
@@ -315,7 +315,7 @@ release-plz updates this file in the Release PR.
 * @github-actions[bot]
 * @lansfy
 
-## [0.6.1](https://github.com/cyberfabric/cyberfabric-core/releases/tag/cf-modkit-canonical-errors-macro-v0.6.1) - 2026-04-22
+## [0.6.1](https://github.com/cyberfabric/cyberfabric-core/releases/tag/cf-modkit-errors-macro-v0.6.1) - 2026-04-22
 
 ### Other
 
@@ -464,7 +464,7 @@ release-plz updates this file in the Release PR.
 
 - updated the following local packages: cf-modkit-security, cf-modkit-odata, cf-modkit, cf-tenant-resolver-sdk
 
-## [0.6.1](https://github.com/cyberfabric/cyberfabric-core/compare/cf-modkit-canonical-errors-v0.6.0...cf-modkit-canonical-errors-v0.6.1) - 2026-03-30
+## [0.6.1](https://github.com/cyberfabric/cyberfabric-core/compare/cf-modkit-errors-v0.6.0...cf-modkit-errors-v0.6.1) - 2026-03-30
 
 ### Other
 

@@ -5,7 +5,7 @@ use crate::api::rest::dto::{
     UserEvent, UserFullDto,
 };
 
-use modkit::api::canonical_prelude::*;
+use modkit::api::prelude::*;
 use modkit::api::select::page_to_projected_json;
 
 use modkit::SseBroadcaster;

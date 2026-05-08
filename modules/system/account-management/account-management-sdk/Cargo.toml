@@ -17,10 +17,10 @@ workspace = true
 
 [dependencies]
 # AM's public inter-module error surface is the AIP-193 `CanonicalError`
-# from `modkit-canonical-errors`. The SDK re-exports it as
+# from `modkit-errors`. The SDK re-exports it as
 # `AccountManagementError` for naming continuity with the
 # `resource-group-sdk` / `tenant-resolver-sdk` pattern.
-modkit-canonical-errors = { workspace = true }
+modkit-errors = { workspace = true }
 
 # IdP provisioner contract (trait + DTO) consumed by AM and implemented
 # by deployment-specific IdP plugins. Lives in the SDK so plugin authors

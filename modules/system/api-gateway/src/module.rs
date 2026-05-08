@@ -28,7 +28,7 @@ use tower_http::{
 use tracing::debug;
 
 use crate::middleware::errors::ApiGatewayGatewayError;
-use modkit_canonical_errors::Problem;
+use modkit_errors::Problem;
 
 /// Map a `tower::timeout` `Elapsed` (or any other unexpected `BoxError`)
 /// into a canonical `application/problem+json` response.
@@ -42,7 +42,7 @@ async fn timeout_to_canonical(err: BoxError) -> axum::response::Response {
     }
 
     let canonical =
-        modkit_canonical_errors::CanonicalError::internal(format!("request pipeline error: {err}"))
+        modkit_errors::CanonicalError::internal(format!("request pipeline error: {err}"))
             .create();
     Problem::from(canonical).into_response()
 }
@@ -334,9 +334,6 @@ impl ApiGateway {
             ));
         }
 
-        // 11) Error mapping (outer to auth so it can translate auth/handler errors)
-        router = router.layer(from_fn(modkit::api::error_layer::error_mapping_middleware));
-
         // 10) Per-route rate limiting & in-flight limits
         let rate_map = middleware::rate_limit::RateLimiterMap::from_specs(&specs, &config)?;
 
@@ -383,7 +380,7 @@ impl ApiGateway {
         // http_metrics so metrics observe the canonical-final body, and
         // outside CatchPanicLayer so panics still reach the panic handler
         // before this middleware tries to rewrite them.
-        router = router.layer(from_fn(modkit::api::canonical_error_middleware));
+        router = router.layer(from_fn(modkit::api::error_middleware));
 
         // 4) HTTP metrics (layer — captures all middleware responses including auth/rate-limit/timeout)
         let http_metrics = Arc::new(middleware::http_metrics::HttpMetrics::new(

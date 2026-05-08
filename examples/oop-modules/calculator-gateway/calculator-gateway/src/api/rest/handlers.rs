@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::Extension;
 
-use modkit::api::canonical_prelude::*;
+use modkit::api::prelude::*;
 use modkit_security::SecurityContext;
 
 use crate::domain::Service;

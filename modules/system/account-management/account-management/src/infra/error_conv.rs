@@ -41,7 +41,7 @@ pub(crate) fn is_serialization_failure(err: &DbErr) -> bool {
 /// signal — pool acquire timeout, connection closed, connection-level
 /// runtime error, or a raw `std::io::Error` surfaced through
 /// [`DbError::Io`]. Used to route those failures to
-/// [`modkit_canonical_errors::CanonicalError::ServiceUnavailable`]
+/// [`modkit_errors::CanonicalError::ServiceUnavailable`]
 /// (HTTP 503) rather than `Internal` (HTTP 500), so clients see a
 /// "retry later, transient infra outage" status that matches reality.
 ///

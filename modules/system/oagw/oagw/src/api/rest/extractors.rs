@@ -1,4 +1,4 @@
-use modkit_canonical_errors::Problem;
+use modkit_errors::Problem;
 use uuid::Uuid;
 
 use crate::api::rest::error::domain_error_to_problem;

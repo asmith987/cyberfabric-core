@@ -2,7 +2,7 @@
 // against a real DB (Phase 3 owns cross-backend coverage). These unit
 // tests cover the pure helpers only.
 use super::*;
-use modkit_canonical_errors::CanonicalError;
+use modkit_errors::CanonicalError;
 use time::OffsetDateTime;
 
 #[test]

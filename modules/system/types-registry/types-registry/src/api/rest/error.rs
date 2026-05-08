@@ -1,6 +1,6 @@
 //! REST error mapping for the Types Registry module.
 
-use modkit_canonical_errors::{CanonicalError, resource_error};
+use modkit_errors::{CanonicalError, resource_error};
 
 use crate::domain::error::DomainError;
 
@@ -57,7 +57,7 @@ impl From<DomainError> for CanonicalError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use modkit_canonical_errors::Problem;
+    use modkit_errors::Problem;
 
     fn problem_from(err: DomainError) -> Problem {
         // Construct the wire `Problem` the same way the canonical error

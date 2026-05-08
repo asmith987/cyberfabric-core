@@ -7,7 +7,7 @@
 //! `From<DbError> for DomainError` produce the right typed
 //! `DomainError` variants for each SQLSTATE / outage signal.
 
-use modkit_canonical_errors::{CanonicalError, Problem};
+use modkit_errors::{CanonicalError, Problem};
 
 use super::classify_db_err_to_domain;
 use crate::domain::error::DomainError;
@@ -143,7 +143,7 @@ fn dberror_other_routes_to_internal_with_redacted_diagnostic() {
 /// distinctive sentinel diagnostic, lifting it into a
 /// `CanonicalError`, and asserting the sentinel never appears in the
 /// JSON-serialized envelope. This guards against any future change to
-/// `modkit_canonical_errors::context::InternalV1` that would drop the
+/// `modkit_errors::context::InternalV1` that would drop the
 /// `#[serde(skip)]` on `description` and start leaking diagnostics
 /// into HTTP responses.
 #[test]

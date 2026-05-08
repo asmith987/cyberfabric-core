@@ -20,7 +20,7 @@
 ## Constructor Example
 
 ```rust
-use modkit_canonical_errors::resource_error;
+use modkit_errors::resource_error;
 
 #[resource_error("gts.cf.core.users.user.v1~")]
 struct UserResourceError;

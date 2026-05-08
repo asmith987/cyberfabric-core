@@ -9,7 +9,7 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use futures::Stream;
-use modkit::api::canonical_prelude::*;
+use modkit::api::prelude::*;
 use modkit::api::odata::OData;
 use modkit_security::SecurityContext;
 use tokio::sync::mpsc;

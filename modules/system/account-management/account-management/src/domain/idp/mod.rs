@@ -85,7 +85,7 @@ pub(crate) fn redact_provider_detail(detail: &str) -> (u64, usize) {
 ///   retained). Provider-supplied `detail` is **not** forwarded into
 ///   the public envelope: vendor SDK strings can carry endpoint
 ///   names, hostnames, or token-bearing fragments, and the
-///   `with_detail` contract on `modkit-canonical-errors` mandates
+///   `with_detail` contract on `modkit-errors` mandates
 ///   pre-redacted public text. The raw detail is logged at `am.idp`
 ///   and reaches operators via trace correlation.
 /// * `Ambiguous` → [`DomainError::Internal`] (HTTP 500). The provider

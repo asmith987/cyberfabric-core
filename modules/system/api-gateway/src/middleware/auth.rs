@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::Arc};
 use crate::middleware::common;
 
 use authn_resolver_sdk::{AuthNResolverClient, AuthNResolverError};
-use modkit_canonical_errors::CanonicalError;
+use modkit_errors::CanonicalError;
 use modkit_security::SecurityContext;
 
 /// Route matcher for a specific HTTP method (authenticated routes).
@@ -228,7 +228,7 @@ pub async fn authn_middleware(
                     .with_reason("MISSING_BEARER")
                     .create();
                 // `instance` / `trace_id` are filled by the canonical
-                // error middleware (`modkit::api::canonical_error_middleware`)
+                // error middleware (`modkit::api::error_middleware`)
                 // on the way out — this middleware sits inside its layer.
                 return err.into_response();
             };
@@ -247,7 +247,7 @@ pub async fn authn_middleware(
 /// Convert `AuthNResolverError` to a canonical Problem Details response.
 ///
 /// `instance` / `trace_id` are filled by the canonical error middleware
-/// (`modkit::api::canonical_error_middleware`) on the way out — this
+/// (`modkit::api::error_middleware`) on the way out — this
 /// middleware sits inside its layer.
 fn authn_error_to_response(err: &AuthNResolverError) -> axum::response::Response {
     log_authn_error(err);

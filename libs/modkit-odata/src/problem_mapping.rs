@@ -4,7 +4,7 @@
 //! converts the resulting `CanonicalError` to a wire `Problem`, attaching
 //! `instance` and `trace_id` from request context.
 
-use modkit_canonical_errors::CanonicalError;
+use modkit_errors::CanonicalError;
 
 use crate::Error;
 use crate::errors::OdataError;
@@ -131,7 +131,7 @@ impl From<Error> for CanonicalError {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
-    use modkit_canonical_errors::Problem;
+    use modkit_errors::Problem;
 
     fn wire(err: Error) -> Problem {
         Problem::from(CanonicalError::from(err))

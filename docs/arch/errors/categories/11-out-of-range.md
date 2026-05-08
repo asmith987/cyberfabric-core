@@ -29,7 +29,7 @@ Field violation:
 ## Constructor Example
 
 ```rust
-use modkit_canonical_errors::resource_error;
+use modkit_errors::resource_error;
 
 #[resource_error("gts.cf.library.books.book.v1~")]
 struct BookResourceError;

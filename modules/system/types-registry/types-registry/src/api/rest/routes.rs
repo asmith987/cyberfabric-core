@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::{Extension, Router};
 use modkit::api::OpenApiRegistry;
-use modkit::api::canonical_prelude::StatusCode;
+use modkit::api::prelude::StatusCode;
 use modkit::api::operation_builder::{LicenseFeature, OperationBuilder};
 
 use super::dto::{

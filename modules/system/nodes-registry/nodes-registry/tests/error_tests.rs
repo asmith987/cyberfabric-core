@@ -8,7 +8,7 @@
 //! middleware is in scope at the unit-test level — the end-to-end wire
 //! values are exercised by integration tests that drive the full router.
 
-use modkit_canonical_errors::{CanonicalError, Problem};
+use modkit_errors::{CanonicalError, Problem};
 use nodes_registry::domain::error::DomainError;
 
 /// Build the wire `Problem` the canonical error middleware would emit

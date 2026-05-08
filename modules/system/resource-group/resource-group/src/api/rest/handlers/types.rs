@@ -9,7 +9,7 @@ use axum::http::Uri;
 use axum::response::IntoResponse;
 use tracing::field::Empty;
 
-use modkit::api::canonical_prelude::*;
+use modkit::api::prelude::*;
 use modkit::api::odata::OData;
 
 use super::{CreateTypeDto, SecurityContext, TypeDto, UpdateTypeDto, info};

@@ -5,7 +5,7 @@ use axum::extract::Path;
 use axum::response::sse::KeepAlive;
 use axum::response::{IntoResponse, Response, Sse};
 use axum::{Extension, Json};
-use modkit::api::canonical_prelude::*;
+use modkit::api::prelude::*;
 use modkit_security::SecurityContext;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;

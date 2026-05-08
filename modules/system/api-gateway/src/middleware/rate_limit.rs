@@ -9,7 +9,7 @@ use axum::{
 use governor::clock::Clock;
 use governor::middleware::StateInformationMiddleware;
 use governor::{DefaultDirectRateLimiter, Quota, RateLimiter};
-use modkit_canonical_errors::{CanonicalError, Problem};
+use modkit_errors::{CanonicalError, Problem};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Arc;

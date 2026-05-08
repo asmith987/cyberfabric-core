@@ -66,7 +66,7 @@ pub async fn license_validation_middleware(
     // Plugin should provide an interface to get a list of global features (features that are not scoped to particular resource)
     if required.iter().any(|r| r != BASE_FEATURE) {
         // `instance` / `trace_id` are filled by the canonical error
-        // middleware (`modkit::api::canonical_error_middleware`) on the way
+        // middleware (`modkit::api::error_middleware`) on the way
         // out — this middleware sits inside its layer.
         return ApiGatewayRouteError::permission_denied()
             .with_reason("LICENSE_FEATURE_REQUIRED")

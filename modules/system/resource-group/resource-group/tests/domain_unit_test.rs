@@ -9,7 +9,7 @@
 
 use cf_resource_group::domain::error::DomainError;
 use cf_resource_group::domain::validation::{self, RG_TYPE_PREFIX};
-use modkit_canonical_errors::{CanonicalError, Problem};
+use modkit_errors::{CanonicalError, Problem};
 
 /// Build the wire `Problem` the canonical error middleware would emit
 /// for a given `DomainError`. The integration tests run without the

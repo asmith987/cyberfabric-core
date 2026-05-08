@@ -558,7 +558,6 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "axum 0.8.9",
- "cf-modkit-canonical-errors",
  "cf-modkit-db",
  "cf-modkit-errors",
  "cf-modkit-macros",
@@ -596,29 +595,6 @@ dependencies = [
  "utoipa",
  "uuid",
  "zip",
-]
-
-[[package]]
-name = "cf-modkit-canonical-errors"
-version = "0.7.2"
-dependencies = [
- "axum 0.8.9",
- "cf-modkit-canonical-errors-macro",
- "http",
- "serde",
- "serde_json",
- "tracing",
- "utoipa",
-]
-
-[[package]]
-name = "cf-modkit-canonical-errors-macro"
-version = "0.6.1"
-dependencies = [
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]
@@ -664,9 +640,10 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-errors"
-version = "0.7.0"
+version = "0.7.2"
 dependencies = [
  "axum 0.8.9",
+ "cf-modkit-errors-macro",
  "http",
  "serde",
  "serde_json",
@@ -676,12 +653,11 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-errors-macro"
-version = "0.6.2"
+version = "0.6.1"
 dependencies = [
+ "proc-macro-crate",
  "proc-macro2",
  "quote",
- "serde",
- "serde_json",
  "syn 2.0.117",
 ]
 
@@ -703,7 +679,6 @@ dependencies = [
  "base64",
  "bigdecimal",
  "cf-modkit-errors",
- "cf-modkit-errors-macro",
  "chrono",
  "chrono-tz",
  "hex",
@@ -713,6 +688,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 2.0.18",
+ "tracing",
  "uuid",
 ]
 

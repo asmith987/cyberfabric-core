@@ -41,7 +41,7 @@ pub fn register_routes(
 /// Suitable for integration tests that don't need an `OpenApiRegistry`.
 ///
 /// Wires the canonical error middleware
-/// (`modkit::api::canonical_error_middleware`) so integration tests
+/// (`modkit::api::error_middleware`) so integration tests
 /// observe the same `instance` / `trace_id` injection production traffic
 /// gets through api-gateway's middleware stack.
 #[cfg(any(test, feature = "test-utils"))]
@@ -75,7 +75,7 @@ pub fn test_router(state: AppState, ctx: modkit_security::SecurityContext) -> Ro
         // Proxy
         .route("/oagw/v1/proxy/{*path}", any(proxy_h::proxy_handler))
         .layer(axum::middleware::from_fn(
-            modkit::api::canonical_error_middleware,
+            modkit::api::error_middleware,
         ))
         .layer(axum::Extension(ctx))
         .layer(axum::Extension(state))

@@ -18,15 +18,16 @@
 //! ### Recommended Pattern
 //!
 //! ```rust,ignore
-//! use axum::{Extension, Json};
-//! use modkit::api::{OperationBuilder, Problem};
+//! use axum::Extension;
+//! use modkit::api::prelude::*;
+//! use modkit::api::OperationBuilder;
 //! use std::sync::Arc;
 //!
 //! async fn list_users(
 //!     Extension(svc): Extension<Arc<UserService>>,
-//! ) -> Result<Json<Vec<UserDto>>, Problem> {
-//!     let users = svc.list_users().await.map_err(Problem::from)?;
-//!     Ok(Json(users))
+//! ) -> ApiResult<JsonBody<Vec<UserDto>>> {
+//!     let users = svc.list_users().await?;
+//!     Ok(JsonBody(users))
 //! }
 //!
 //! pub fn router(service: Arc<UserService>) -> axum::Router {
@@ -104,16 +105,13 @@ pub mod contracts;
 // Type-safe API operation builder
 pub mod api;
 pub use api::{
-    IntoProblem, OpenApiInfo, OpenApiRegistry, OpenApiRegistryImpl, OperationBuilder,
-    error_mapping_middleware,
+    OpenApiInfo, OpenApiRegistry, OpenApiRegistryImpl, OperationBuilder,
+    error_middleware,
 };
 pub use modkit_odata::{Page, PageInfo};
 
 // HTTP utilities
 pub mod http;
-pub use api::problem::{
-    Problem, ValidationError, bad_request, conflict, internal_error, not_found,
-};
 pub use http::sse::SseBroadcaster;
 
 // Telemetry utilities
@@ -123,13 +121,6 @@ pub mod backends;
 pub mod lifecycle;
 pub mod plugins;
 pub mod runtime;
-
-// Error catalog runtime support
-pub mod errors;
-
-// Ergonomic result types
-pub mod result;
-pub use result::ApiResult;
 
 // Domain layer marker traits for DDD enforcement
 pub mod domain;

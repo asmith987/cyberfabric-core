@@ -31,7 +31,7 @@ async fn process_data() -> Result<Data, CanonicalError> {
 }
 
 // 3. Resource-scoped error construction
-use modkit_canonical_errors::resource_error;
+use modkit_errors::resource_error;
 
 #[resource_error("gts.cf.core.users.user.v1~")]
 struct UserResourceError;
@@ -54,7 +54,7 @@ let validation_err = UserResourceError::invalid_argument()
 **Resource-scoped errors** are a convenience layer for module-owned resources. The `#[resource_error]` attribute macro declares a resource type and generates constructors that auto-tag every error with the resource's GTS identity:
 
 ```rust
-use modkit_canonical_errors::resource_error;
+use modkit_errors::resource_error;
 
 #[resource_error("gts.cf.core.users.user.v1~")]
 struct UserResourceError;
@@ -257,7 +257,7 @@ Every error response consists of **contract parts** (fixed per category) and **v
 Resource types are declared via the `#[resource_error]` attribute macro that associates a GTS identifier with a named type. The macro generates error constructors for 13 canonical categories (all except `internal`, `service_unavailable`, and `unauthenticated`, which are not resource-scoped), and tags every generated constructor with `resource_type` automatically.
 
 ```rust
-use modkit_canonical_errors::resource_error;
+use modkit_errors::resource_error;
 
 #[resource_error("gts.cf.core.users.user.v1~")]
 struct UserResourceError;
@@ -307,7 +307,7 @@ async fn get_user(Path(id): Path<String>) -> Result<Json<User>, CanonicalError> 
 │  │ → Problem       │  for Problem               │
 │  └─────────────────┘                            │
 ├─────────────────────────────────────────────────┤
-│  libs/modkit-canonical-errors-macro              │
+│  libs/modkit-errors-macro              │
 │  ┌──────────────────────┐                       │
 │  │ #[resource_error]    │ macro                 │
 │  └──────────────────────┘                       │
@@ -582,7 +582,7 @@ UserResourceError::permission_denied(d)     .with_reason(r).create()
 **Direct canonical error instantiation**:
 
 ```rust
-use modkit_canonical_errors::resource_error;
+use modkit_errors::resource_error;
 
 #[resource_error("gts.cf.core.users.user.v1~")]
 struct UserResourceError;
@@ -595,7 +595,7 @@ let err = UserResourceError::invalid_argument()
 **Resource-scoped error instantiation**:
 
 ```rust
-use modkit_canonical_errors::resource_error;
+use modkit_errors::resource_error;
 
 #[resource_error("gts.cf.core.users.user.v1~")]
 struct UserResourceError;

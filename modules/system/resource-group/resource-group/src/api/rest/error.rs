@@ -2,13 +2,13 @@
 // Updated: 2026-05-07 by Constructor Tech
 // @cpt-begin:cpt-cf-resource-group-dod-sdk-foundation-sdk-errors:p1:inst-full
 // @cpt-algo:cpt-cf-resource-group-algo-sdk-foundation-map-domain-error:p1
-//! Map domain errors to canonical errors (`modkit-canonical-errors`) for
+//! Map domain errors to canonical errors (`modkit-errors`) for
 //! REST responses. Handlers return `ApiResult<T>` (= `Result<T,
 //! CanonicalError>`); the canonical error middleware
-//! (`modkit::api::canonical_error_middleware`) converts the `CanonicalError`
+//! (`modkit::api::error_middleware`) converts the `CanonicalError`
 //! to a wire `Problem` and fills `instance` / `trace_id` post-response.
 
-use modkit_canonical_errors::{CanonicalError, resource_error};
+use modkit_errors::{CanonicalError, resource_error};
 
 use crate::domain::error::DomainError;
 

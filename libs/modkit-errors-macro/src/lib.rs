@@ -1,649 +1,328 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
-//! Proc-macro for generating strongly-typed error catalogs from JSON.
+//! Proc-macro for canonical error resource types.
 //!
-//! This macro reads a JSON file at compile time, validates error definitions,
-//! and generates type-safe error code enums and helper macros.
-//!
-//! ## Usage
-//!
-//! The macro is self-contained and handles imports automatically.
-//!
-//! ```rust,ignore
-//! declare_errors! {
-//!     path = "gts/errors_system.json",
-//!     namespace = "system_errors",
-//!     vis = "pub"
-//! }
-//! ```
+//! Provides the `#[resource_error("gts...")]` attribute macro.
 
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
-use serde::Deserialize;
-use syn::parse::{Parse, ParseStream};
-use syn::{LitStr, Token, parse_macro_input};
+use syn::LitStr;
+use syn::parse_macro_input;
 
-/// JSON schema for a single error definition
-#[derive(Debug, Clone, Deserialize)]
-struct ErrorEntry {
-    status: u16,
-    title: String,
-    code: String,
-    #[serde(rename = "type")]
-    type_url: Option<String>,
-    #[serde(default)]
-    alias: Option<String>,
-}
+/// Attribute macro that generates a resource error type with builder-returning
+/// constructors for the 13 canonical error categories that carry a
+/// `resource_type`.
+///
+/// # Usage
+///
+/// ```rust,ignore
+/// use modkit_errors::resource_error;
+///
+/// #[resource_error("gts.cf.core.users.user.v1~")]
+/// struct UserResourceError;
+/// ```
+///
+/// The GTS resource-type literal is validated at compile time.
+///
+/// Generated constructors either accept a detail string or are zero-argument
+/// (using a default message). Each returns a `ResourceErrorBuilder` with
+/// typestate enforcement.
+#[proc_macro_attribute]
+pub fn resource_error(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let gts_lit = parse_macro_input!(attr as LitStr);
+    let input = parse_macro_input!(item as syn::ItemStruct);
 
-/// Parsed macro input
-struct DeclareErrorsInput {
-    path: String,
-    namespace: String,
-    vis: syn::Visibility,
-}
-
-impl Parse for DeclareErrorsInput {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut path = None;
-        let mut namespace = None;
-        let mut vis = syn::Visibility::Inherited;
-
-        while !input.is_empty() {
-            let key: syn::Ident = input.parse()?;
-            input.parse::<Token![=]>()?;
-
-            match key.to_string().as_str() {
-                "path" => {
-                    let lit: LitStr = input.parse()?;
-                    path = Some(lit.value());
-                }
-                "namespace" => {
-                    let lit: LitStr = input.parse()?;
-                    namespace = Some(lit.value());
-                }
-                "vis" => {
-                    let lit: LitStr = input.parse()?;
-                    vis = match lit.value().as_str() {
-                        "pub" => syn::Visibility::Public(syn::token::Pub::default()),
-                        _ => syn::Visibility::Inherited,
-                    };
-                }
-                _ => return Err(syn::Error::new(key.span(), "Unknown parameter")),
-            }
-
-            if !input.is_empty() {
-                input.parse::<Token![,]>()?;
-            }
-        }
-
-        Ok(DeclareErrorsInput {
-            path: path.ok_or_else(|| input.error("Missing 'path' parameter"))?,
-            namespace: namespace.ok_or_else(|| input.error("Missing 'namespace' parameter"))?,
-            vis,
-        })
-    }
-}
-
-/// Main proc-macro entry point
-#[proc_macro]
-pub fn declare_errors(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeclareErrorsInput);
-
-    match generate_errors(&input) {
+    match generate_resource_error(&gts_lit, &input) {
         Ok(tokens) => tokens.into(),
         Err(e) => e.to_compile_error().into(),
     }
 }
 
-fn generate_errors(input: &DeclareErrorsInput) -> syn::Result<TokenStream2> {
-    // Load and parse JSON file
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .map_err(|_| syn::Error::new(Span::call_site(), "CARGO_MANIFEST_DIR not set"))?;
-    let json_path = std::path::Path::new(&manifest_dir).join(&input.path);
+const CANONICAL_ERRORS_PKG: &str = "cf-modkit-errors";
+const CANONICAL_ERRORS_LIB: &str = "modkit_errors";
 
-    let json_content = std::fs::read_to_string(&json_path).map_err(|e| {
-        syn::Error::new(
-            Span::call_site(),
-            format!(
-                "Failed to read error catalog at {}: {}",
-                json_path.display(),
-                e
-            ),
-        )
-    })?;
+/// Resolves the path to the `modkit_errors` crate at the expansion site.
+///
+/// Uses `CARGO_PKG_NAME` to detect when the macro is invoked from within the
+/// canonical-errors package itself (e.g. integration tests), where the lib name
+/// (`modkit_errors`) differs from the package name
+/// (`cf-modkit-errors`). For external consumers the resolution is
+/// delegated to `proc_macro_crate`.
+fn resolve_crate_path(gts_lit: &LitStr) -> syn::Result<TokenStream2> {
+    let in_self = std::env::var("CARGO_PKG_NAME").is_ok_and(|p| p == CANONICAL_ERRORS_PKG);
 
-    let entries: Vec<ErrorEntry> = serde_json::from_str(&json_content).map_err(|e| {
-        syn::Error::new(
-            Span::call_site(),
-            format!(
-                "Failed to parse error catalog JSON at {}: {}",
-                json_path.display(),
-                e
-            ),
-        )
-    })?;
+    if in_self {
+        // Inside the cf-modkit-errors package.
+        // `crate` is correct only for the lib target; integration tests and
+        // examples access the library as an extern crate by its [lib] name.
+        let is_lib = std::env::var("CARGO_CRATE_NAME").is_ok_and(|c| c == CANONICAL_ERRORS_LIB);
 
-    // Validate entries
-    validate_entries(&entries)?;
+        if is_lib {
+            return Ok(quote!(crate));
+        }
 
-    // Compute short names and check for collisions
-    let short_names = compute_short_names(&entries)?;
+        let ident = syn::Ident::new(CANONICAL_ERRORS_LIB, proc_macro2::Span::call_site());
+        return Ok(quote!(::#ident));
+    }
 
-    let namespace_ident = syn::Ident::new(&input.namespace, Span::call_site());
+    match proc_macro_crate::crate_name(CANONICAL_ERRORS_PKG) {
+        Ok(proc_macro_crate::FoundCrate::Itself) => Ok(quote!(crate)),
+        Ok(proc_macro_crate::FoundCrate::Name(n)) => {
+            // When the dependency is not renamed, `proc_macro_crate` returns the
+            // package name normalised to a Rust identifier.  If [lib].name differs
+            // from the package name (as it does here) we must map back to the actual
+            // lib name, otherwise the generated code references a non-existent crate.
+            let pkg_normalized = CANONICAL_ERRORS_PKG.replace('-', "_");
+            let effective = if n == pkg_normalized {
+                CANONICAL_ERRORS_LIB
+            } else {
+                &n
+            };
+            let ident = syn::Ident::new(effective, proc_macro2::Span::call_site());
+            Ok(quote!(::#ident))
+        }
+        Err(_) => Err(syn::Error::new_spanned(
+            gts_lit,
+            "cf-modkit-errors must be a direct dependency",
+        )),
+    }
+}
+
+fn generate_resource_error(gts_lit: &LitStr, input: &syn::ItemStruct) -> syn::Result<TokenStream2> {
+    let gts_type = gts_lit.value();
+    validate_gts_resource_type_str(&gts_type, gts_lit.span())?;
+
+    if !matches!(input.fields, syn::Fields::Unit) {
+        return Err(syn::Error::new_spanned(
+            &input.ident,
+            "#[resource_error] only supports unit structs (e.g. `struct MyError;`)",
+        ));
+    }
+    if !input.generics.params.is_empty() || input.generics.where_clause.is_some() {
+        return Err(syn::Error::new_spanned(
+            &input.ident,
+            "#[resource_error] does not support generics or where-clauses",
+        ));
+    }
+
+    let crate_path = resolve_crate_path(gts_lit)?;
+
     let vis = &input.vis;
-    let json_file_path = &input.path;
-
-    let enum_variants = generate_enum_variants(&entries);
-    let const_defs = generate_const_defs(&entries);
-    let impl_methods = generate_impl_methods(&entries);
-    let short_accessors = generate_short_accessors(&entries, &short_names);
-    let from_literal_impl = generate_from_literal(&entries);
-    let macro_rules_single = generate_macro_rules_single(&entries, &namespace_ident);
-    let macro_rules_double = generate_macro_rules_double(&entries, &namespace_ident);
-    let response_macro_rules = generate_response_macro_rules(&entries, &namespace_ident);
+    let name = &input.ident;
 
     Ok(quote! {
-        // Force Cargo to rebuild if errors.json changes
-        const _: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/", #json_file_path));
+        #input
 
-        // Fully-qualified imports (work both inside and outside modkit)
-        use ::modkit_errors::catalog::ErrDef;
-        use ::modkit_errors::problem::Problem;
+        impl #name {
+            // --- resource_name required ---
 
-        /// Strongly-typed error codes generated from the JSON catalog
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        #[non_exhaustive]
-        #[allow(non_camel_case_types)]
-        #vis enum ErrorCode {
-            #(#enum_variants),*
+            #vis fn not_found(detail: impl Into<String>)
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceMissing,
+                    #crate_path::builder::NoContext,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__not_found(#gts_type, detail)
+            }
+
+            #vis fn already_exists(detail: impl Into<String>)
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceMissing,
+                    #crate_path::builder::NoContext,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__already_exists(#gts_type, detail)
+            }
+
+            #vis fn data_loss(detail: impl Into<String>)
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceMissing,
+                    #crate_path::builder::NoContext,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__data_loss(#gts_type, detail)
+            }
+
+            // --- resource_name optional ---
+
+            #vis fn aborted(detail: impl Into<String>)
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceOptional,
+                    #crate_path::builder::NeedsReason,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__aborted(#gts_type, detail)
+            }
+
+            #vis fn unknown(detail: impl Into<String>)
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceOptional,
+                    #crate_path::builder::NoContext,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__unknown(#gts_type, detail)
+            }
+
+            #vis fn deadline_exceeded(detail: impl Into<String>)
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceOptional,
+                    #crate_path::builder::NoContext,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__deadline_exceeded(#gts_type, detail)
+            }
+
+            // --- resource_name absent ---
+
+            #vis fn permission_denied()
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceAbsent,
+                    #crate_path::builder::NeedsReason,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__permission_denied(#gts_type, "You do not have permission to perform this operation")
+            }
+
+            #vis fn unimplemented(detail: impl Into<String>)
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceOptional,
+                    #crate_path::builder::NoContext,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__unimplemented(#gts_type, detail)
+            }
+
+            #vis fn cancelled()
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceAbsent,
+                    #crate_path::builder::NoContext,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__cancelled(#gts_type, "Operation cancelled by the client")
+            }
+
+            // --- resource_name optional, needs field violations ---
+
+            #vis fn invalid_argument()
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceOptional,
+                    #crate_path::builder::NeedsFieldViolation,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__invalid_argument(#gts_type, "Request validation failed")
+            }
+
+            #vis fn out_of_range(detail: impl Into<String>)
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceOptional,
+                    #crate_path::builder::NeedsFieldViolation,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__out_of_range(#gts_type, detail)
+            }
+
+            // --- resource_name optional, needs quota violations ---
+
+            #vis fn resource_exhausted(detail: impl Into<String>)
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceOptional,
+                    #crate_path::builder::NeedsQuotaViolation,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__resource_exhausted(#gts_type, detail)
+            }
+
+            // --- resource_name optional, needs precondition violations ---
+
+            #vis fn failed_precondition()
+                -> #crate_path::ResourceErrorBuilder<
+                    #crate_path::builder::ResourceOptional,
+                    #crate_path::builder::NeedsPreconditionViolation,
+                >
+            {
+                #crate_path::ResourceErrorBuilder::__failed_precondition(#gts_type, "Operation precondition not met")
+            }
         }
-
-        impl ErrorCode {
-            /// Get the HTTP status code for this error
-            pub const fn status(&self) -> u16 {
-                match self {
-                    #(#const_defs),*
-                }
-            }
-
-            /// Get the error definition for this error code
-            pub const fn def(&self) -> ErrDef {
-                match self {
-                    #(#impl_methods),*
-                }
-            }
-
-            /// Convert to Problem with detail (without instance/trace)
-            pub fn as_problem(&self, detail: impl Into<String>) -> Problem {
-                self.def().as_problem(detail)
-            }
-
-            /// Create a Problem with `instance` and optional `trace_id` context.
-            pub fn with_context(
-                &self,
-                detail: impl Into<String>,
-                instance: &str,
-                trace_id: Option<String>,
-            ) -> Problem {
-                let mut p = self.as_problem(detail);
-                p = p.with_instance(instance);
-                if let Some(tid) = trace_id {
-                    p = p.with_trace_id(tid);
-                }
-                p
-            }
-
-            // Short ergonomic accessor functions
-            #(#short_accessors)*
-
-            /// Internal helper to get ErrorCode from a literal string
-            #[doc(hidden)]
-            pub fn from_literal(code: &str) -> Self {
-                match code {
-                    #(#from_literal_impl,)*
-                    _ => panic!("Unknown error code literal — must be present in errors.json"),
-                }
-            }
-        }
-
-        /// Macro to create a Problem from a literal error code (compile-time validated)
-        #[macro_export]
-        macro_rules! problem_from_catalog {
-            #(#macro_rules_single)*
-            #(#macro_rules_double)*
-
-            // Catch-all for unknown codes
-            ($unknown:literal) => {
-                compile_error!(concat!("Unknown error code: ", $unknown))
-            };
-            ($unknown:literal, $detail:expr) => {
-                compile_error!(concat!("Unknown error code: ", $unknown))
-            };
-        }
-        use problem_from_catalog;
-
-        /// Macro to create a Problem directly from a literal error code with instance/trace
-        #[macro_export]
-        macro_rules! response_from_catalog {
-            #(#response_macro_rules)*
-
-            // Catch-all for unknown codes
-            ($unknown:literal, $instance:expr, $trace:expr, $($arg:tt)+) => {
-                compile_error!(concat!("Unknown error code: ", $unknown))
-            };
-            ($unknown:literal, $instance:expr, $trace:expr) => {
-                compile_error!(concat!("Unknown error code: ", $unknown))
-            };
-        }
-        use response_from_catalog;
     })
 }
 
-fn validate_entries(entries: &[ErrorEntry]) -> syn::Result<()> {
-    let mut codes = std::collections::HashSet::new();
-    let mut titles_and_statuses = std::collections::HashMap::new();
-
-    for entry in entries {
-        // Validate status code
-        if !(100..=599).contains(&entry.status) {
-            return Err(syn::Error::new(
-                Span::call_site(),
-                format!(
-                    "Invalid HTTP status code {} for error '{}'",
-                    entry.status, entry.code
-                ),
-            ));
-        }
-
-        // Validate non-empty title
-        if entry.title.trim().is_empty() {
-            return Err(syn::Error::new(
-                Span::call_site(),
-                format!("Empty title for error '{}'", entry.code),
-            ));
-        }
-
-        // Check for duplicate codes
-        if !codes.insert(&entry.code) {
-            return Err(syn::Error::new(
-                Span::call_site(),
-                format!("Duplicate error code: '{}'", entry.code),
-            ));
-        }
-
-        // Strict GTS validation
-        validate_gts_format(&entry.code)?;
-
-        // Optional: Detect redundancy (same title+status)
-        let key = (entry.title.trim(), entry.status);
-        if let Some(existing_code) = titles_and_statuses.get(&key) {
-            eprintln!(
-                "Warning: Error codes '{}' and '{}' share identical title+status ({}:{}). Consider consolidating.",
-                existing_code, entry.code, entry.title, entry.status
-            );
-        } else {
-            titles_and_statuses.insert(key, entry.code.clone());
-        }
-    }
-
-    Ok(())
-}
-
-/// Strict GTS format validation
+/// Validates a GTS resource-type literal at proc-macro time.
 ///
-/// Valid format: `gts.vendor.package.namespace.type.version~chain1~chain2~...~instanceGTX`
-/// Where the final GTX (instance) must have at least 5 segments: vendor.package.namespace.type.version
-fn validate_gts_format(code: &str) -> syn::Result<()> {
-    // Must start with 'gts.'
-    if !code.starts_with("gts.") {
+/// Expected format: `gts.<vendor>.<package>.<namespace>.<type>.<version>~`
+fn validate_gts_resource_type_str(s: &str, span: Span) -> syn::Result<()> {
+    let b = s.as_bytes();
+    let len = b.len();
+
+    if len == 0 {
+        return Err(syn::Error::new(span, "GTS resource type must not be empty"));
+    }
+
+    if b[len - 1] != b'~' {
+        return Err(syn::Error::new(span, "GTS resource type must end with '~'"));
+    }
+
+    #[allow(unknown_lints)]
+    #[allow(de0901_gts_string_pattern)]
+    if len < 6 || !s.starts_with("gts.") {
         return Err(syn::Error::new(
-            Span::call_site(),
-            format!("GTS code '{code}' must start with 'gts.'"),
+            span,
+            "GTS resource type must start with 'gts.'",
         ));
     }
 
-    // Split by '~' to get GTX chain
-    let parts: Vec<&str> = code.split('~').collect();
-    if parts.is_empty() {
+    let body = &s[4..len - 1];
+    if body.is_empty() {
         return Err(syn::Error::new(
-            Span::call_site(),
-            format!("GTS code '{code}' is empty or malformed"),
+            span,
+            "GTS resource type must have segments after 'gts.' prefix",
         ));
     }
 
-    // Validate each GTX in the chain
-    for (idx, gtx) in parts.iter().enumerate() {
-        let segments: Vec<&str> = gtx.split('.').collect();
+    let segments: Vec<&str> = body.split('.').collect();
 
-        // First GTX must start with 'gts'
-        if idx == 0 && segments.first().is_none_or(|s| *s != "gts") {
+    for seg in &segments {
+        if seg.is_empty() {
             return Err(syn::Error::new(
-                Span::call_site(),
-                format!("GTS code '{code}' must start with 'gts' in the first GTX"),
+                span,
+                "GTS resource type contains an empty segment",
             ));
         }
-
-        // All GTX segments must be non-empty and lowercase alphanumeric (with underscores)
-        for segment in &segments {
-            if segment.is_empty() {
-                return Err(syn::Error::new(
-                    Span::call_site(),
-                    format!("GTS code '{code}' contains empty segment"),
-                ));
-            }
-            if !segment
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-            {
-                return Err(syn::Error::new(
-                    Span::call_site(),
-                    format!(
-                        "GTS code '{code}' has invalid segment '{segment}': only lowercase letters, digits and underscores are allowed"
-                    ),
-                ));
-            }
-        }
-
-        // Final GTX (instance) must have at least 5 segments after 'gts'
-        if idx == parts.len() - 1 {
-            // Subtract 1 for 'gts' prefix
-            let meaningful_segments = if segments.first().is_some_and(|s| *s == "gts") {
-                segments.len() - 1
-            } else {
-                segments.len()
-            };
-
-            if meaningful_segments < 5 {
-                return Err(syn::Error::new(
-                    Span::call_site(),
-                    format!(
-                        "GTS code '{code}' is expected to have at least 5 segments in final GTX: vendor.package.namespace.type.version (found {meaningful_segments} segments)"
-                    ),
-                ));
-            }
-
-            // Validate that the final segment is a version (vN or vN.M format)
-            if let Some(last) = segments.last() {
-                let is_version = last.starts_with('v')
-                    && last.len() > 1
-                    && last[1..].chars().all(|c| c.is_ascii_digit() || c == '.')
-                    && last[1..].split('.').all(|t| !t.is_empty());
-                if !is_version {
-                    return Err(syn::Error::new(
-                        Span::call_site(),
-                        format!(
-                            "GTS code '{code}' final GTX must end with version 'vN' or 'vN.M' (found '{last}')"
-                        ),
-                    ));
-                }
-            }
+        if !seg
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_')
+        {
+            return Err(syn::Error::new(
+                span,
+                "GTS resource type segments must contain only lowercase ASCII letters, digits, or underscores",
+            ));
         }
     }
 
-    // Validate that there's at least one chained GTX (format: gts.X~Y or gts.X)
-    if parts.is_empty() {
+    // Need >= 5 segments: vendor.package.namespace.type.version
+    if segments.len() < 5 {
         return Err(syn::Error::new(
-            Span::call_site(),
-            format!("GTS code '{code}' must have at least one GTX"),
+            span,
+            "GTS resource type must have at least 5 segments after 'gts.': vendor.package.namespace.type.version",
+        ));
+    }
+
+    // Version segment validation
+    // SAFETY: segments.len() >= 5 is checked above, so `.last()` is always `Some`.
+    let Some(version) = segments.last() else {
+        unreachable!()
+    };
+    if !version.starts_with('v') || version.len() < 2 {
+        return Err(syn::Error::new(
+            span,
+            "GTS resource type must end with a version segment starting with 'v' (e.g. v1)",
+        ));
+    }
+    if !version[1..].bytes().all(|c| c.is_ascii_digit()) {
+        return Err(syn::Error::new(
+            span,
+            "GTS resource type version segment after 'v' must contain only ASCII digits",
         ));
     }
 
     Ok(())
-}
-
-fn generate_enum_variants(entries: &[ErrorEntry]) -> Vec<TokenStream2> {
-    entries
-        .iter()
-        .map(|e| {
-            let variant = code_to_ident(&e.code);
-            let code = &e.code;
-            quote! {
-                #[doc = #code]
-                #variant
-            }
-        })
-        .collect()
-}
-
-fn generate_const_defs(entries: &[ErrorEntry]) -> Vec<TokenStream2> {
-    entries
-        .iter()
-        .map(|e| {
-            let variant = code_to_ident(&e.code);
-            let status = e.status;
-            quote! {
-                ErrorCode::#variant => #status
-            }
-        })
-        .collect()
-}
-
-fn generate_impl_methods(entries: &[ErrorEntry]) -> Vec<TokenStream2> {
-    entries
-        .iter()
-        .map(|e| {
-            let variant = code_to_ident(&e.code);
-            let status = e.status;
-            let title = &e.title;
-            let code = &e.code;
-            let type_url = match &e.type_url {
-                Some(s) => s.clone(),
-                None => format!("https://errors.example.com/{}", e.code),
-            };
-
-            quote! {
-                ErrorCode::#variant => ErrDef {
-                    status: #status,
-                    title: #title,
-                    code: #code,
-                    type_url: #type_url,
-                }
-            }
-        })
-        .collect()
-}
-
-fn generate_macro_rules_single(
-    entries: &[ErrorEntry],
-    namespace: &syn::Ident,
-) -> Vec<TokenStream2> {
-    entries
-        .iter()
-        .map(|e| {
-            let code_lit = &e.code;
-            let variant = code_to_ident(&e.code);
-
-            quote! {
-                (#code_lit) => {
-                    $crate::#namespace::ErrorCode::#variant.as_problem("")
-                };
-            }
-        })
-        .collect()
-}
-
-fn generate_macro_rules_double(
-    entries: &[ErrorEntry],
-    namespace: &syn::Ident,
-) -> Vec<TokenStream2> {
-    entries
-        .iter()
-        .map(|e| {
-            let code_lit = &e.code;
-            let variant = code_to_ident(&e.code);
-
-            quote! {
-                (#code_lit, $detail:expr) => {
-                    $crate::#namespace::ErrorCode::#variant.as_problem($detail)
-                };
-            }
-        })
-        .collect()
-}
-
-/// Convert a dotted error code to a valid Rust identifier
-fn code_to_ident(code: &str) -> syn::Ident {
-    let mut sanitized = code.replace(['.', '-', '/', '~'], "_");
-
-    // Prefix with underscore if it starts with a digit
-    if sanitized.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-        sanitized = format!("_{sanitized}");
-    }
-
-    syn::Ident::new(&sanitized, Span::call_site())
-}
-
-/// Extract the final GTX segment (after last `~`) from a GTS identifier.
-/// If there is no `~`, use the entire code.
-fn last_gtx_segment(code: &str) -> &str {
-    if let Some(pos) = code.rfind('~') {
-        &code[pos + 1..]
-    } else {
-        code
-    }
-}
-
-/// Given a GTX segment "vendor.package.namespace.type.version",
-/// produce alias "`package_namespace_type_version`".
-///
-/// - Drops the vendor (first path segment)
-/// - Replaces dots with underscores
-/// - Ensures a valid Rust identifier (prefix '_' if starts with a digit)
-fn derive_alias_from_gts(code: &str) -> syn::Result<String> {
-    let gtx = last_gtx_segment(code);
-    // Expect vendor.package.namespace.type.version
-    let parts: Vec<&str> = gtx.split('.').collect();
-    if parts.len() < 5 {
-        return Err(syn::Error::new(
-            Span::call_site(),
-            format!(
-                "GTS code '{code}' is expected to have at least 5 segments in final GTX: vendor.package.namespace.type.version"
-            ),
-        ));
-    }
-    // parts[0] = vendor; we drop it
-    let rest = &parts[1..]; // package, namespace, type, version, (optionally extra minor parts are already in version)
-    let alias_raw = rest.join("_");
-
-    // Ensure valid Rust identifier (lowercase is already per spec)
-    let mut ident = alias_raw.replace(['-', '/', '~'], "_"); // just in case
-    if ident.chars().next().is_some_and(|c| c.is_ascii_digit()) {
-        ident = format!("_{ident}");
-    }
-    Ok(ident)
-}
-
-/// Compute short names for all entries, detecting collisions
-fn compute_short_names(entries: &[ErrorEntry]) -> syn::Result<Vec<String>> {
-    use std::collections::HashMap;
-
-    let mut name_to_codes: HashMap<String, Vec<&str>> = HashMap::new();
-
-    // Collect all short names (alias or derived via GTS)
-    for entry in entries {
-        let short = if let Some(alias) = &entry.alias {
-            alias.clone()
-        } else {
-            // Use new GTS-aware derivation
-            derive_alias_from_gts(&entry.code)?
-        };
-
-        name_to_codes.entry(short).or_default().push(&entry.code);
-    }
-
-    // Collision detection
-    for (name, codes) in &name_to_codes {
-        if codes.len() > 1 {
-            return Err(syn::Error::new(
-                Span::call_site(),
-                format!(
-                    "Short name collision: '{}' would be used by multiple error codes: {}. \
-                     Please add explicit 'alias' fields in errors.json to resolve this.",
-                    name,
-                    codes.join(", ")
-                ),
-            ));
-        }
-    }
-
-    // Return short names in the same order as entries
-    entries
-        .iter()
-        .map(|e| {
-            if let Some(alias) = &e.alias {
-                Ok(alias.clone())
-            } else {
-                derive_alias_from_gts(&e.code)
-            }
-        })
-        // Turn Vec<Result<String>> into Result<Vec<String>>
-        .collect::<syn::Result<Vec<String>>>()
-}
-
-/// Generate short ergonomic accessor functions
-fn generate_short_accessors(entries: &[ErrorEntry], short_names: &[String]) -> Vec<TokenStream2> {
-    entries
-        .iter()
-        .zip(short_names.iter())
-        .map(|(entry, short_name)| {
-            let full_variant = code_to_ident(&entry.code);
-            let short_ident = syn::Ident::new(short_name, Span::call_site());
-            let code = &entry.code;
-
-            quote! {
-                #[doc = concat!("Returns the error code for `", #code, "`.")]
-                pub const fn #short_ident() -> Self {
-                    Self::#full_variant
-                }
-            }
-        })
-        .collect()
-}
-
-/// Generate `from_literal` match arms
-fn generate_from_literal(entries: &[ErrorEntry]) -> Vec<TokenStream2> {
-    entries
-        .iter()
-        .map(|e| {
-            let code_lit = &e.code;
-            let variant = code_to_ident(&e.code);
-
-            quote! {
-                #code_lit => Self::#variant
-            }
-        })
-        .collect()
-}
-
-/// Generate `response_from_catalog`! macro rules (with format support)
-fn generate_response_macro_rules(
-    entries: &[ErrorEntry],
-    namespace: &syn::Ident,
-) -> Vec<TokenStream2> {
-    let mut rules = Vec::new();
-
-    for entry in entries {
-        let code_lit = &entry.code;
-        let variant = code_to_ident(&entry.code);
-
-        // Rule with formatted detail
-        rules.push(quote! {
-            (#code_lit, $instance:expr, $trace:expr, $($arg:tt)+) => {
-                $crate::#namespace::ErrorCode::#variant.with_context(
-                    format!($($arg)+),
-                    $instance,
-                    $trace
-                )
-            };
-        });
-
-        // Rule with static/empty detail
-        rules.push(quote! {
-            (#code_lit, $instance:expr, $trace:expr) => {
-                $crate::#namespace::ErrorCode::#variant.with_context("", $instance, $trace)
-            };
-        });
-    }
-
-    rules
 }

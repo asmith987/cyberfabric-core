@@ -31,14 +31,12 @@ members = [
     "libs/modkit-db",
     "libs/modkit-db-macros",
     "libs/modkit-auth",
-    "libs/modkit-canonical-errors",
-    "libs/modkit-canonical-errors-macro",
+    "libs/modkit-errors",
+    "libs/modkit-errors-macro",
     "libs/modkit-http",
     "libs/modkit-sdk",
     "libs/modkit-odata-macros",
     "libs/modkit-security",
-    "libs/modkit-errors",
-    "libs/modkit-errors-macro",
     "libs/modkit-odata",
     "libs/modkit-node-info",
     "libs/modkit-transport-grpc",
@@ -223,12 +221,10 @@ verbose_file_reads = "deny"
 modkit = { package = "cf-modkit", version = "0.6.8", path = "libs/modkit" }
 modkit-http = { package = "cf-modkit-http", version = "0.6.4", path = "libs/modkit-http" }
 modkit-auth = { package = "cf-modkit-auth", version = "0.6.4", path = "libs/modkit-auth" }
-modkit-canonical-errors = { package = "cf-modkit-canonical-errors", version = "0.7.2", path = "libs/modkit-canonical-errors" }
-modkit-canonical-errors-macro = { package = "cf-modkit-canonical-errors-macro", version = "0.6.1", path = "libs/modkit-canonical-errors-macro" }
+modkit-errors = { package = "cf-modkit-errors", version = "0.7.2", path = "libs/modkit-errors" }
+modkit-errors-macro = { package = "cf-modkit-errors-macro", version = "0.6.1", path = "libs/modkit-errors-macro" }
 modkit-db = { package = "cf-modkit-db", version = "0.8.1", path = "libs/modkit-db" }
 modkit-db-macros = { package = "cf-modkit-db-macros", version = "0.6.2", path = "libs/modkit-db-macros" }
-modkit-errors = { package = "cf-modkit-errors", version = "0.7.0", path = "libs/modkit-errors" }
-modkit-errors-macro = { package = "cf-modkit-errors-macro", version = "0.6.2", path = "libs/modkit-errors-macro" }
 modkit-macros = { package = "cf-modkit-macros", version = "0.6.2", path = "libs/modkit-macros" }
 modkit-node-info = { package = "cf-modkit-node-info", version = "0.6.3", path = "libs/modkit-node-info" }
 modkit-odata = { package = "cf-modkit-odata", version = "0.7.1", path = "libs/modkit-odata" }

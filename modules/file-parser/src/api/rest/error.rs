@@ -1,4 +1,4 @@
-use modkit_canonical_errors::{CanonicalError, resource_error};
+use modkit_errors::{CanonicalError, resource_error};
 
 use crate::domain::error::DomainError;
 

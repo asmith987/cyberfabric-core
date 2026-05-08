@@ -13,7 +13,7 @@ use glob::{MatchOptions, Pattern};
 use crate::config::RoutePoliciesConfig;
 use crate::middleware::common;
 use crate::middleware::errors::ApiGatewayRouteError;
-use modkit_canonical_errors::CanonicalError;
+use modkit_errors::CanonicalError;
 use modkit_security::SecurityContext;
 
 /// Compiled scope enforcement rules for efficient runtime matching.
@@ -216,7 +216,7 @@ pub async fn scope_enforcement_middleware(
                 "Route policy enforcement denied: no SecurityContext for protected route"
             );
             // `instance` / `trace_id` are filled by the canonical error
-            // middleware (`modkit::api::canonical_error_middleware`) on the
+            // middleware (`modkit::api::error_middleware`) on the
             // way out — this middleware sits inside its layer.
             return CanonicalError::unauthenticated()
                 .with_reason("AUTH_REQUIRED")
@@ -232,7 +232,7 @@ pub async fn scope_enforcement_middleware(
         .check(&path, method, security_context.token_scopes())
     {
         // `instance` / `trace_id` are filled by the canonical error
-        // middleware (`modkit::api::canonical_error_middleware`) on the
+        // middleware (`modkit::api::error_middleware`) on the
         // way out — this middleware sits inside its layer.
         return canonical.into_response();
     }
@@ -245,7 +245,7 @@ pub async fn scope_enforcement_middleware(
 mod tests {
     use super::*;
     use crate::config::RoutePolicyRule;
-    use modkit_canonical_errors::Problem;
+    use modkit_errors::Problem;
 
     fn build_config(enabled: bool, routes: Vec<(&str, Vec<&str>)>) -> RoutePoliciesConfig {
         build_config_with_methods(

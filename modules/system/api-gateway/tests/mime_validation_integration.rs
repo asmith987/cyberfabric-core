@@ -14,7 +14,7 @@ use axum::{
 };
 use http::Method;
 use modkit::api::OperationSpec;
-use modkit_canonical_errors::Problem;
+use modkit_errors::Problem;
 use serde_json::json;
 use tower::ServiceExt; // for oneshot
 

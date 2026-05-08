@@ -1228,7 +1228,7 @@ dependencies = [
  "axum",
  "calculator-sdk",
  "cf-modkit",
- "cf-modkit-canonical-errors",
+ "cf-modkit-errors",
  "cf-modkit-macros",
  "cf-modkit-security",
  "http",
@@ -1369,9 +1369,9 @@ dependencies = [
  "cf-account-management-sdk",
  "cf-authz-resolver-sdk",
  "cf-modkit",
- "cf-modkit-canonical-errors",
  "cf-modkit-db",
  "cf-modkit-db-macros",
+ "cf-modkit-errors",
  "cf-modkit-macros",
  "cf-modkit-odata",
  "cf-modkit-security",
@@ -1401,7 +1401,7 @@ name = "cf-account-management-sdk"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "cf-modkit-canonical-errors",
+ "cf-modkit-errors",
  "cf-tenant-resolver-sdk",
  "gts",
  "serde",
@@ -1421,7 +1421,7 @@ dependencies = [
  "bytes",
  "cf-authn-resolver-sdk",
  "cf-modkit",
- "cf-modkit-canonical-errors",
+ "cf-modkit-errors",
  "cf-modkit-http",
  "cf-modkit-macros",
  "cf-modkit-security",
@@ -1578,7 +1578,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "cf-modkit",
- "cf-modkit-canonical-errors",
+ "cf-modkit-errors",
  "cf-modkit-macros",
  "cf-modkit-security",
  "docx-rust",
@@ -1634,9 +1634,9 @@ dependencies = [
  "cf-authz-resolver-sdk",
  "cf-mini-chat-sdk",
  "cf-modkit",
- "cf-modkit-canonical-errors",
  "cf-modkit-db",
  "cf-modkit-db-macros",
+ "cf-modkit-errors",
  "cf-modkit-macros",
  "cf-modkit-odata",
  "cf-modkit-security",
@@ -1699,7 +1699,6 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "axum",
- "cf-modkit-canonical-errors",
  "cf-modkit-db",
  "cf-modkit-errors",
  "cf-modkit-macros",
@@ -1786,32 +1785,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cf-modkit-canonical-errors"
-version = "0.7.2"
-dependencies = [
- "axum",
- "cf-modkit-canonical-errors-macro",
- "gts-id",
- "http",
- "sea-orm",
- "serde",
- "serde_json",
- "tracing",
- "trybuild",
- "utoipa",
-]
-
-[[package]]
-name = "cf-modkit-canonical-errors-macro"
-version = "0.6.1"
-dependencies = [
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
 name = "cf-modkit-db"
 version = "0.8.1"
 dependencies = [
@@ -1867,24 +1840,27 @@ dependencies = [
 
 [[package]]
 name = "cf-modkit-errors"
-version = "0.7.0"
+version = "0.7.2"
 dependencies = [
  "axum",
+ "cf-modkit-errors-macro",
+ "gts-id",
  "http",
+ "sea-orm",
  "serde",
  "serde_json",
  "tracing",
+ "trybuild",
  "utoipa",
 ]
 
 [[package]]
 name = "cf-modkit-errors-macro"
-version = "0.6.2"
+version = "0.6.1"
 dependencies = [
+ "proc-macro-crate",
  "proc-macro2",
  "quote",
- "serde",
- "serde_json",
  "syn 2.0.117",
 ]
 
@@ -1974,7 +1950,7 @@ version = "0.7.1"
 dependencies = [
  "base64 0.22.1",
  "bigdecimal",
- "cf-modkit-canonical-errors",
+ "cf-modkit-errors",
  "chrono",
  "chrono-tz",
  "hex",
@@ -2089,7 +2065,7 @@ dependencies = [
  "async-trait",
  "axum",
  "cf-modkit",
- "cf-modkit-canonical-errors",
+ "cf-modkit-errors",
  "cf-modkit-macros",
  "cf-modkit-node-info",
  "cf-nodes-registry-sdk",
@@ -2126,7 +2102,7 @@ dependencies = [
  "cf-credstore-sdk",
  "cf-modkit",
  "cf-modkit-auth",
- "cf-modkit-canonical-errors",
+ "cf-modkit-errors",
  "cf-modkit-http",
  "cf-modkit-macros",
  "cf-modkit-security",
@@ -2202,9 +2178,9 @@ dependencies = [
  "axum",
  "cf-authz-resolver-sdk",
  "cf-modkit",
- "cf-modkit-canonical-errors",
  "cf-modkit-db",
  "cf-modkit-db-macros",
+ "cf-modkit-errors",
  "cf-modkit-macros",
  "cf-modkit-odata",
  "cf-modkit-security",
@@ -2346,9 +2322,9 @@ dependencies = [
  "axum",
  "cf-authz-resolver-sdk",
  "cf-modkit",
- "cf-modkit-canonical-errors",
  "cf-modkit-db",
  "cf-modkit-db-macros",
+ "cf-modkit-errors",
  "cf-modkit-macros",
  "cf-modkit-security",
  "cf-simple-user-settings-sdk",
@@ -2565,7 +2541,7 @@ dependencies = [
  "async-trait",
  "axum",
  "cf-modkit",
- "cf-modkit-canonical-errors",
+ "cf-modkit-errors",
  "cf-modkit-macros",
  "cf-modkit-security",
  "cf-modkit-utils",
@@ -9887,9 +9863,9 @@ dependencies = [
  "cf-api-gateway",
  "cf-authz-resolver-sdk",
  "cf-modkit",
- "cf-modkit-canonical-errors",
  "cf-modkit-db",
  "cf-modkit-db-macros",
+ "cf-modkit-errors",
  "cf-modkit-http",
  "cf-modkit-macros",
  "cf-modkit-odata",

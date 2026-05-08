@@ -1,141 +1,126 @@
-//! Centralized error mapping for Axum
+//! Canonical error middleware (DESIGN.md §3.2 / §3.6 / §3.7).
 //!
-//! This module provides utilities for automatically converting all framework
-//! and module errors into consistent RFC 9457 Problem+JSON responses, eliminating
-//! per-route boilerplate.
+//! Post-processes responses with `Content-Type: application/problem+json`,
+//! filling missing `trace_id` (W3C `traceparent` → `x-trace-id` →
+//! `x-request-id` → span-id fallback) and `instance` (request URI path).
+//! Logs at `warn!` for 4xx / `error!` for 5xx with structured fields.
+//!
+//! Catch-all behaviour (panics, unknown error types) is out of scope per
+//! PRD §4.2 — `CatchPanicLayer` handles panics; handlers are responsible
+//! for typing their errors as `CanonicalError`.
 
-use axum::{extract::Request, http::HeaderMap, middleware::Next, response::Response};
-use std::any::Any;
+use axum::{
+    body::{Body, to_bytes},
+    extract::Request,
+    http::{HeaderMap, HeaderValue, header},
+    middleware::Next,
+    response::Response,
+};
+use modkit_errors::Problem;
 
-use crate::config::ConfigError;
-use modkit_canonical_errors::{CanonicalError, Problem};
-use modkit_odata::Error as ODataError;
+const PROBLEM_JSON: &str = "application/problem+json";
 
-/// Middleware function that provides centralized error mapping
+/// Tower middleware function that fills `trace_id` / `instance` on canonical
+/// Problem responses and logs at `warn!` (4xx) / `error!` (5xx).
 ///
-/// This middleware can be applied to routes to automatically extract request context
-/// and provide it to error handlers. The actual error conversion happens in the
-/// `IntoProblem` trait implementations and `map_error_to_problem` function.
-pub async fn error_mapping_middleware(request: Request, next: Next) -> Response {
-    let _uri = request.uri().clone();
-    let _headers = request.headers().clone();
+/// Non-problem responses pass through unchanged. Malformed Problem bodies
+/// are logged at `error!` and returned to the client as-is.
+pub async fn error_middleware(request: Request, next: Next) -> Response {
+    let uri_path = request.uri().path().to_owned();
+    let request_headers = request.headers().clone();
 
     let response = next.run(request).await;
 
-    // If the response is already successful or is already a Problem response, pass it through
-    if response.status().is_success() || is_problem_response(&response) {
+    if !is_problem_response(&response) {
         return response;
     }
 
-    // For error responses, the actual error conversion should happen in the handlers
-    // using the IntoProblem trait or map_error_to_problem function
-    // This middleware provides the infrastructure for extracting request context
+    let (parts, body) = response.into_parts();
+    let bytes = match to_bytes(body, usize::MAX).await {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::error!(error = %e, "canonical error middleware: failed to read response body");
+            return Response::from_parts(parts, Body::empty());
+        }
+    };
+
+    let mut problem: Problem = match serde_json::from_slice(&bytes) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!(error = %e, "canonical error middleware: failed to deserialize problem+json body");
+            return Response::from_parts(parts, Body::from(bytes));
+        }
+    };
+
+    if problem.instance.is_none() {
+        problem.instance = Some(uri_path);
+    }
+    if problem.trace_id.is_none() {
+        problem.trace_id = extract_trace_id(&request_headers);
+    }
+
+    log_problem(&problem);
+
+    let new_bytes = match serde_json::to_vec(&problem) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::error!(
+                error = %e,
+                "canonical error middleware: failed to re-serialize problem+json body"
+            );
+            return Response::from_parts(parts, Body::from(bytes));
+        }
+    };
+
+    let mut response = Response::from_parts(parts, Body::from(new_bytes.clone()));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_LENGTH, HeaderValue::from(new_bytes.len()));
     response
 }
 
-/// Check if a response is already a Problem+JSON response
 fn is_problem_response(response: &Response) -> bool {
     response
         .headers()
-        .get(axum::http::header::CONTENT_TYPE)
+        .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|ct| ct.contains("application/problem+json"))
+        .is_some_and(|ct| ct.starts_with(PROBLEM_JSON))
 }
 
-/// Extract trace ID from headers or generate one
-pub fn extract_trace_id(headers: &HeaderMap) -> Option<String> {
-    // Try to get trace ID from various common headers
-    headers
-        .get("x-trace-id")
-        .or_else(|| headers.get("x-request-id"))
-        .or_else(|| headers.get("traceparent"))
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_owned)
-        .or_else(|| {
-            // Try to get from current tracing span
-            tracing::Span::current()
-                .id()
-                .map(|id| id.into_u64().to_string())
-        })
-}
-
-fn internal_problem(
-    detail: impl Into<String>,
-    instance: &str,
-    trace_id: Option<String>,
-) -> Problem {
-    let canonical = CanonicalError::internal(detail).create();
-    let mut problem = Problem::from(canonical);
-    problem.instance = Some(instance.to_owned());
-    problem.trace_id = trace_id;
-    problem
-}
-
-/// Centralized error mapping function
-///
-/// This function provides a single place to convert all framework and module errors
-/// into consistent canonical `Problem` responses with proper trace IDs and instance
-/// paths.
-pub fn map_error_to_problem(error: &dyn Any, instance: &str, trace_id: Option<String>) -> Problem {
-    if let Some(odata_err) = error.downcast_ref::<ODataError>() {
-        return crate::api::odata::error::odata_error_to_problem(odata_err, instance, trace_id);
+/// W3C `traceparent` → `x-trace-id` → `x-request-id` → span-id fallback.
+fn extract_trace_id(headers: &HeaderMap) -> Option<String> {
+    for name in ["traceparent", "x-trace-id", "x-request-id"] {
+        if let Some(v) = headers.get(name).and_then(|v| v.to_str().ok()) {
+            return Some(v.to_owned());
+        }
     }
-
-    if let Some(config_err) = error.downcast_ref::<ConfigError>() {
-        let detail = match config_err {
-            ConfigError::ModuleNotFound { module } => {
-                format!("Module '{module}' configuration not found")
-            }
-            ConfigError::InvalidModuleStructure { module } => {
-                format!("Module '{module}' has invalid configuration structure")
-            }
-            ConfigError::MissingConfigSection { module } => {
-                format!("Module '{module}' is missing required config section")
-            }
-            ConfigError::InvalidConfig { module, .. } => {
-                format!("Module '{module}' has invalid configuration")
-            }
-            ConfigError::VarExpand { module, source } => {
-                tracing::error!(
-                    module = %module,
-                    error = %source,
-                    "Environment variable expansion failed in module config"
-                );
-                format!("Module '{module}' has invalid environment-backed configuration")
-            }
-        };
-        return internal_problem(detail, instance, trace_id);
-    }
-
-    if let Some(anyhow_err) = error.downcast_ref::<anyhow::Error>() {
-        tracing::error!(error = %anyhow_err, "Internal server error");
-        return internal_problem("An internal error occurred", instance, trace_id);
-    }
-
-    tracing::error!("Unknown error type in error mapping layer");
-    internal_problem("An unknown error occurred", instance, trace_id)
+    tracing::Span::current()
+        .id()
+        .map(|id| id.into_u64().to_string())
 }
 
-/// Helper trait for converting errors to Problem responses with context
-pub trait IntoProblem {
-    fn into_problem(self, instance: &str, trace_id: Option<String>) -> Problem;
-}
+fn log_problem(problem: &Problem) {
+    let status = problem.status;
+    let problem_type = problem.problem_type.as_str();
+    let instance = problem.instance.as_deref().unwrap_or("");
+    let trace_id = problem.trace_id.as_deref().unwrap_or("");
 
-impl IntoProblem for ODataError {
-    fn into_problem(self, instance: &str, trace_id: Option<String>) -> Problem {
-        crate::api::odata::error::odata_error_to_problem(&self, instance, trace_id)
-    }
-}
-
-impl IntoProblem for ConfigError {
-    fn into_problem(self, instance: &str, trace_id: Option<String>) -> Problem {
-        map_error_to_problem(&self as &dyn Any, instance, trace_id)
-    }
-}
-
-impl IntoProblem for anyhow::Error {
-    fn into_problem(self, instance: &str, trace_id: Option<String>) -> Problem {
-        map_error_to_problem(&self as &dyn Any, instance, trace_id)
+    if (400..500).contains(&status) {
+        tracing::warn!(
+            status,
+            problem_type,
+            instance,
+            trace_id,
+            "canonical error response (client)"
+        );
+    } else if (500..600).contains(&status) {
+        tracing::error!(
+            status,
+            problem_type,
+            instance,
+            trace_id,
+            "canonical error response (server)"
+        );
     }
 }
 
@@ -143,80 +128,273 @@ impl IntoProblem for anyhow::Error {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
     use super::*;
+    use axum::{
+        Router,
+        body::Body,
+        http::{Request, StatusCode},
+        middleware::from_fn,
+        routing::get,
+    };
+    use modkit_errors::CanonicalError;
+    use serde_json::Value;
+    use tower::ServiceExt;
 
-    #[test]
-    fn test_odata_error_mapping() {
-        let error = ODataError::InvalidFilter("malformed".to_owned());
-        let problem = error.into_problem("/tests/v1/test", Some("trace123".to_owned()));
-
-        assert_eq!(problem.status, 400);
-        assert!(problem.problem_type.contains("invalid_argument"));
-        assert_eq!(problem.instance, Some("/tests/v1/test".to_owned()));
-        assert_eq!(problem.trace_id, Some("trace123".to_owned()));
+    fn problem_response(problem: &Problem, status: StatusCode) -> Response {
+        let body = serde_json::to_vec(problem).expect("serialize problem");
+        Response::builder()
+            .status(status)
+            .header(header::CONTENT_TYPE, PROBLEM_JSON)
+            .body(Body::from(body))
+            .expect("build response")
     }
 
-    #[test]
-    fn test_config_error_mapping() {
-        let error = ConfigError::ModuleNotFound {
-            module: "test_module".to_owned(),
-        };
-        let problem = error.into_problem("/tests/v1/test", None);
-
-        // Canonical `Internal` errors emit a fixed wire `detail` and stash the
-        // descriptive cause in the (debug-only) diagnostic — module names are
-        // intentionally not echoed on the wire.
-        assert_eq!(problem.status, 500);
-        assert!(problem.problem_type.contains("internal"));
-        assert_eq!(problem.instance, Some("/tests/v1/test".to_owned()));
+    fn build_app(responder: impl Fn() -> Response + Clone + Send + Sync + 'static) -> Router {
+        Router::new()
+            .route(
+                "/api/v1/widgets/42",
+                get(move || {
+                    let responder = responder.clone();
+                    async move { responder() }
+                }),
+            )
+            .layer(from_fn(error_middleware))
     }
 
-    #[test]
-    fn test_anyhow_error_mapping() {
-        let error = anyhow::anyhow!("Something went wrong");
-        let problem = error.into_problem("/tests/v1/test", Some("trace456".to_owned()));
-
-        assert_eq!(problem.status, 500);
-        assert!(problem.problem_type.contains("internal"));
-        assert_eq!(problem.instance, Some("/tests/v1/test".to_owned()));
-        assert_eq!(problem.trace_id, Some("trace456".to_owned()));
+    async fn body_to_problem(response: Response) -> Problem {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        serde_json::from_slice(&bytes).expect("parse problem+json")
     }
 
-    #[test]
-    fn test_config_var_expand_error_sanitizes_detail() {
-        let source = modkit_utils::var_expand::ExpandVarsError::Var {
-            name: "SECRET_API_KEY".to_owned(),
-            source: std::env::VarError::NotPresent,
-        };
-        let error = ConfigError::VarExpand {
-            module: "my_mod".to_owned(),
-            source,
-        };
-        let problem = error.into_problem("/tests/v1/test", Some("trace789".to_owned()));
+    #[tokio::test]
+    async fn fills_instance_and_trace_id_from_headers() {
+        let problem: Problem = CanonicalError::internal("boom").create().into();
+        let app = build_app(move || problem_response(&problem, StatusCode::INTERNAL_SERVER_ERROR));
 
-        assert_eq!(problem.status, 500);
-        assert!(problem.problem_type.contains("internal"));
-        assert_eq!(problem.instance, Some("/tests/v1/test".to_owned()));
-        assert_eq!(problem.trace_id, Some("trace789".to_owned()));
+        let req = Request::builder()
+            .uri("/api/v1/widgets/42")
+            .header(
+                "traceparent",
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            )
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let problem = body_to_problem(res).await;
 
-        // Detail MUST NOT leak the env var name or the underlying error message.
-        assert!(
-            !problem.detail.contains("SECRET_API_KEY"),
-            "detail must not contain env var name, got: {}",
-            problem.detail,
-        );
-        assert!(
-            !problem.detail.contains("not present"),
-            "detail must not contain source error text, got: {}",
-            problem.detail,
+        assert_eq!(problem.instance.as_deref(), Some("/api/v1/widgets/42"));
+        assert_eq!(
+            problem.trace_id.as_deref(),
+            Some("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
         );
     }
 
-    #[test]
-    fn test_extract_trace_id_from_headers() {
-        let mut headers = HeaderMap::new();
-        headers.insert("x-trace-id", "test-trace-123".parse().unwrap());
+    #[tokio::test]
+    async fn does_not_overwrite_existing_instance() {
+        let preset: Problem =
+            Problem::from(CanonicalError::internal("boom").create()).with_instance("/handler-set");
+        let app = build_app(move || problem_response(&preset, StatusCode::INTERNAL_SERVER_ERROR));
 
-        let trace_id = extract_trace_id(&headers);
-        assert_eq!(trace_id, Some("test-trace-123".to_owned()));
+        let req = Request::builder()
+            .uri("/api/v1/widgets/42")
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        let problem = body_to_problem(res).await;
+
+        assert_eq!(problem.instance.as_deref(), Some("/handler-set"));
+    }
+
+    #[tokio::test]
+    async fn does_not_overwrite_existing_trace_id() {
+        let preset: Problem =
+            Problem::from(CanonicalError::internal("boom").create()).with_trace_id("handler-trace");
+        let app = build_app(move || problem_response(&preset, StatusCode::INTERNAL_SERVER_ERROR));
+
+        let req = Request::builder()
+            .uri("/api/v1/widgets/42")
+            .header("traceparent", "should-be-ignored")
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        let problem = body_to_problem(res).await;
+
+        assert_eq!(problem.trace_id.as_deref(), Some("handler-trace"));
+    }
+
+    #[tokio::test]
+    async fn passes_through_non_problem_responses_verbatim() {
+        let payload = b"{\"hello\":\"world\"}";
+        let app = Router::new()
+            .route(
+                "/plain",
+                get(|| async {
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(&b"{\"hello\":\"world\"}"[..]))
+                        .unwrap()
+                }),
+            )
+            .layer(from_fn(error_middleware));
+
+        let req = Request::builder()
+            .uri("/plain")
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(
+            res.headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("application/json")
+        );
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), payload);
+    }
+
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn malformed_problem_passes_through_with_error_log() {
+        let raw = b"{not-json}";
+        let app = Router::new()
+            .route(
+                "/api/v1/widgets/42",
+                get(|| async {
+                    Response::builder()
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .header(header::CONTENT_TYPE, PROBLEM_JSON)
+                        .body(Body::from(&b"{not-json}"[..]))
+                        .unwrap()
+                }),
+            )
+            .layer(from_fn(error_middleware));
+
+        let req = Request::builder()
+            .uri("/api/v1/widgets/42")
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), raw);
+        assert!(logs_contain(
+            "canonical error middleware: failed to deserialize problem+json body"
+        ));
+    }
+
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn logs_warn_for_4xx_and_error_for_5xx() {
+        // 4xx → warn
+        let problem_4xx: Problem = CanonicalError::unauthenticated()
+            .with_reason("MISSING_TOKEN")
+            .create()
+            .into();
+        let app_4xx = build_app(move || problem_response(&problem_4xx, StatusCode::UNAUTHORIZED));
+        let req = Request::builder()
+            .uri("/api/v1/widgets/42")
+            .body(Body::empty())
+            .unwrap();
+        let _ = app_4xx.oneshot(req).await.unwrap();
+        assert!(logs_contain("canonical error response (client)"));
+
+        // 5xx → error
+        let problem_5xx: Problem = CanonicalError::internal("boom").create().into();
+        let app_5xx =
+            build_app(move || problem_response(&problem_5xx, StatusCode::INTERNAL_SERVER_ERROR));
+        let req = Request::builder()
+            .uri("/api/v1/widgets/42")
+            .body(Body::empty())
+            .unwrap();
+        let _ = app_5xx.oneshot(req).await.unwrap();
+        assert!(logs_contain("canonical error response (server)"));
+    }
+
+    #[tokio::test]
+    async fn extract_trace_id_prefers_traceparent_over_other_headers() {
+        let problem: Problem = CanonicalError::internal("boom").create().into();
+        let app = build_app(move || problem_response(&problem, StatusCode::INTERNAL_SERVER_ERROR));
+
+        let req = Request::builder()
+            .uri("/api/v1/widgets/42")
+            .header("traceparent", "from-traceparent")
+            .header("x-trace-id", "from-x-trace-id")
+            .header("x-request-id", "from-x-request-id")
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        let problem = body_to_problem(res).await;
+
+        assert_eq!(problem.trace_id.as_deref(), Some("from-traceparent"));
+    }
+
+    #[tokio::test]
+    async fn falls_back_to_span_id_when_no_trace_headers_present() {
+        // Parity with the `sets_trace_id_when_in_span` test the legacy
+        // `CanonicalProblemMigrationExt` trait file used to carry: when
+        // none of `traceparent` / `x-trace-id` / `x-request-id` is set,
+        // the middleware fills `trace_id` from `tracing::Span::current().id()`.
+        use tracing::Instrument;
+        use tracing_subscriber::fmt;
+
+        // Thread-local subscriber so the assigned span ID is observable;
+        // `set_default` returns a guard that restores the previous default
+        // when dropped.
+        let subscriber = fmt().with_test_writer().finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        let span = tracing::info_span!("span_id_fallback_test");
+        let span_id = span
+            .id()
+            .expect("the test subscriber must assign an ID to the span")
+            .into_u64()
+            .to_string();
+
+        let problem: Problem = CanonicalError::internal("boom").create().into();
+        let app = build_app(move || problem_response(&problem, StatusCode::INTERNAL_SERVER_ERROR));
+
+        let req = Request::builder()
+            .uri("/api/v1/widgets/42")
+            .body(Body::empty())
+            .unwrap();
+
+        // `.instrument(span)` makes `span` the current span every time the
+        // request future is polled, so `Span::current().id()` inside the
+        // middleware (after `next.run(...).await`) resolves to `Some(span)`.
+        let res = app.oneshot(req).instrument(span).await.unwrap();
+        let problem = body_to_problem(res).await;
+
+        assert_eq!(
+            problem.trace_id.as_deref(),
+            Some(span_id.as_str()),
+            "trace_id should fall back to the active span's id when no header is present",
+        );
+    }
+
+    #[tokio::test]
+    async fn body_is_valid_json_after_rewrite() {
+        let problem: Problem = CanonicalError::internal("boom").create().into();
+        let app = build_app(move || problem_response(&problem, StatusCode::INTERNAL_SERVER_ERROR));
+
+        let req = Request::builder()
+            .uri("/api/v1/widgets/42")
+            .header("x-trace-id", "abc123")
+            .body(Body::empty())
+            .unwrap();
+        let res = app.oneshot(req).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_slice(&bytes).expect("rewritten body must be valid JSON");
+        assert_eq!(v["instance"].as_str(), Some("/api/v1/widgets/42"));
+        assert_eq!(v["trace_id"].as_str(), Some("abc123"));
     }
 }

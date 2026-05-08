@@ -21,7 +21,7 @@ workspace = true
 with-utoipa = ["dep:utoipa"]
 
 [dependencies]
-modkit-canonical-errors = { workspace = true }
+modkit-errors = { workspace = true }
 bigdecimal = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true, default-features = false, features = ["clock"] }

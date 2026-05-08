@@ -16,7 +16,7 @@ use modkit::{
     context::ModuleCtx,
     contracts::{ApiGatewayCapability, OpenApiRegistry, RestApiCapability},
 };
-use modkit_canonical_errors::Problem;
+use modkit_errors::Problem;
 use serde_json::json;
 use std::sync::Arc;
 use tower::ServiceExt;

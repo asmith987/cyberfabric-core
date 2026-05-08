@@ -1,6 +1,6 @@
 //! REST error mapping for the OAGW module.
 //!
-//! Maps `DomainError` to canonical errors (`modkit-canonical-errors`) and
+//! Maps `DomainError` to canonical errors (`modkit-errors`) and
 //! provides:
 //!
 //! * `From<DomainError> for CanonicalError` — long-lived mapping.
@@ -16,7 +16,7 @@
 //!
 //! ## `permission_denied` is fixed-detail by design
 //!
-//! `modkit-canonical-errors-macro` generates a zero-argument
+//! `modkit-errors-macro` generates a zero-argument
 //! `permission_denied()` constructor — the wire `detail` is locked to the
 //! canonical default (`"You do not have permission to perform this
 //! operation"`) regardless of cause (CORS origin, CORS method, RBAC
@@ -39,7 +39,7 @@
 
 use axum::response::{IntoResponse, Response};
 use http::HeaderValue;
-use modkit_canonical_errors::{CanonicalError, Problem, resource_error};
+use modkit_errors::{CanonicalError, Problem, resource_error};
 
 use crate::domain::error::DomainError;
 use crate::domain::gts_helpers as gts;
@@ -112,7 +112,7 @@ pub struct OagwTransformPluginError;
 // TODO(cpt-cf-errors-component-error-middleware): the per-arm `tracing::warn!` /
 // `error!` / `debug!` calls below are transitional. DESIGN.md §3.6 reserves
 // error logging to the canonical error middleware: now that the middleware
-// (`modkit::api::canonical_error_middleware`) logs WARN/ERROR with the
+// (`modkit::api::error_middleware`) logs WARN/ERROR with the
 // `trace_id`, every `tracing::*` call inside this `From` impl — plus the
 // matching log inside `guard_rejected_to_canonical` — should be removed in
 // a follow-up cleanup once we have confirmed parity of the structured
@@ -467,7 +467,7 @@ pub(crate) fn domain_error_to_problem(err: DomainError, instance: &str) -> Probl
 /// IDs, tenant IDs, scope) in the body.
 ///
 /// `instance` / `trace_id` are NOT set here — the canonical error
-/// middleware (`modkit::api::canonical_error_middleware`) injects them on
+/// middleware (`modkit::api::error_middleware`) injects them on
 /// the response on the way out via the same router this helper feeds into.
 pub fn error_response(err: DomainError) -> Response {
     let rate_limit_meta = match &err {
